@@ -1,0 +1,33 @@
+# Web 框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# 数据库
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+aiosqlite>=0.19.0
+
+# 缓存和队列 (可选)
+# redis>=5.0.0
+# celery[redis]>=5.3.0
+
+# 数据验证
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+pydantic[email]>=2.5.0
+
+# 认证和安全
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# HTTP 客户端
+httpx>=0.25.0
+
+# 文件处理
+python-multipart>=0.0.6
+
+# XML 解析 (arXiv)
+lxml>=5.0.0
+
+# 环境变量
+python-dotenv>=1.0.0
