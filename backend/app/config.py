@@ -9,7 +9,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ENV_FILE = BACKEND_DIR / ".env"
-DEFAULT_SQLITE_DB_PATH = BACKEND_DIR / "paperfinder.db"
+
+# Render persistent disk path (production) or local path (development)
+RENDER_DATA_DIR = Path("/app/data")
+if RENDER_DATA_DIR.exists():
+    # Running on Render - use persistent disk
+    DEFAULT_SQLITE_DB_PATH = RENDER_DATA_DIR / "paperfinder.db"
+else:
+    # Running locally
+    DEFAULT_SQLITE_DB_PATH = BACKEND_DIR / "paperfinder.db"
 
 
 class Settings(BaseSettings):
