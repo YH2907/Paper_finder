@@ -13,10 +13,7 @@ from app.schemas.common import ResponseBase
 from app.services.paper_service import PaperService
 from app.services.crawler.engine import CrawlerEngine
 from app.services.ai.analyzer import PaperAnalyzer
-from app.services.ai.router import AIRouter
-from app.services.ai.groq import GroqService
-from app.services.ai.gemini import GeminiService
-from app.services.ai.mock import MockAIService
+from app.services.ai import build_ai_router
 from app.config import settings
 
 router = APIRouter(prefix="/papers", tags=["论文"])
@@ -30,17 +27,8 @@ def get_crawler_engine() -> CrawlerEngine:
 
 
 def get_analyzer() -> PaperAnalyzer:
-    """获取论文分析器
-
-    如果没有配置 AI API Key，使用 Mock 服务
-    """
-    if settings.has_ai_configured:
-        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
-        fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
-        ai_router = AIRouter(primary=primary, fallback=fallback)
-    else:
-        mock_service = MockAIService()
-        ai_router = AIRouter(primary=mock_service, fallback=mock_service)
+    """获取论文分析器"""
+    ai_router = build_ai_router()
     return PaperAnalyzer(ai_router=ai_router)
 
 

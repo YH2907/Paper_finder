@@ -117,22 +117,10 @@ class SchedulerService:
             if has_problems and settings.has_ai_configured:
                 # 使用 Agent 服务进行问题驱动的搜索
                 from app.services.agent_service import AgentService
-                from app.services.ai.router import AIRouter
-                from app.services.ai.groq import GroqService
-                from app.services.ai.gemini import GeminiService
+                from app.services.ai import build_ai_router
                 
                 # 创建 AI 路由器
-                ai_router = None
-                if settings.GROQ_API_KEY and settings.GEMINI_API_KEY:
-                    primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
-                    fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
-                    ai_router = AIRouter(primary=primary, fallback=fallback)
-                elif settings.GROQ_API_KEY:
-                    from app.services.ai.groq import GroqService
-                    ai_router = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
-                elif settings.GEMINI_API_KEY:
-                    from app.services.ai.gemini import GeminiService
-                    ai_router = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
+                ai_router = build_ai_router()
                 
                 agent = AgentService(db=db, ai_router=ai_router)
                 papers = await agent.search_and_push(

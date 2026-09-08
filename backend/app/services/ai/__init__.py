@@ -6,6 +6,38 @@ from .router import AIRouter
 from .analyzer import PaperAnalyzer
 from .chat import ChatSession, ChatService as AIChatService
 
+
+def build_ai_router():
+    """统一构建 AI 路由器
+    
+    - Groq + Gemini：Groq 为主，Gemini 为备
+    - 仅 Groq：Groq 为主，Mock 为备
+    - 仅 Gemini：Mock 为主，Gemini 为备
+    - 都没有：Mock 为主，Mock 为备
+    """
+    from app.config import settings
+    from .groq import GroqService
+    from .gemini import GeminiService
+
+    has_groq = bool(settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip())
+    has_gemini = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip())
+
+    if has_groq and has_gemini:
+        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
+        fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
+    elif has_groq:
+        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
+        fallback = MockAIService()
+    elif has_gemini:
+        primary = MockAIService()
+        fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
+    else:
+        primary = MockAIService()
+        fallback = MockAIService()
+
+    return AIRouter(primary=primary, fallback=fallback)
+
+
 __all__ = [
     "BaseAIService",
     "MockAIService",
@@ -13,4 +45,5 @@ __all__ = [
     "PaperAnalyzer",
     "ChatSession",
     "AIChatService",
+    "build_ai_router",
 ]

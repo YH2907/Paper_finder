@@ -1,6 +1,6 @@
 """API 路由汇总"""
 from fastapi import APIRouter
-from app.api.v1 import auth, topics, papers, chat, notifications, users, settings, deep_research
+from app.api.v1 import auth, topics, papers, chat, notifications, users, settings, deep_research, ai_status
 
 api_router = APIRouter()
 
@@ -13,6 +13,7 @@ api_router.include_router(chat.router)
 api_router.include_router(notifications.router)
 api_router.include_router(settings.router)
 api_router.include_router(deep_research.router)
+api_router.include_router(ai_status.router)
 
 
 @api_router.get("/health")

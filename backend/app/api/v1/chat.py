@@ -18,32 +18,15 @@ from app.schemas.chat import (
 )
 from app.schemas.common import ResponseBase
 from app.services.chat_service import ChatService
-from app.services.ai.router import AIRouter
-from app.services.ai.groq import GroqService
-from app.services.ai.gemini import GeminiService
-from app.services.ai.mock import MockAIService
-from app.config import settings
+from app.services.ai import build_ai_router
+
 
 router = APIRouter(prefix="/chats", tags=["对话"])
 
 
-def _build_ai_router() -> AIRouter:
-    """构建 AI 路由器
-
-    如果没有配置 AI API Key，使用 Mock 服务
-    """
-    if settings.has_ai_configured:
-        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
-        fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
-    else:
-        primary = MockAIService()
-        fallback = MockAIService()
-    return AIRouter(primary=primary, fallback=fallback)
-
-
 def get_chat_service(db: Session = Depends(get_db)) -> ChatService:
     """获取对话服务实例"""
-    ai_router = _build_ai_router()
+    ai_router = build_ai_router()
     return ChatService(db=db, ai_router=ai_router)
 
 

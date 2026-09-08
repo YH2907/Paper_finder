@@ -28,27 +28,14 @@ router = APIRouter(prefix="/deep-research", tags=["深度研究"])
 
 def _build_ai_router() -> AIRouter:
     """构建 AI 路由器"""
-    if settings.has_ai_configured:
-        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
-        fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
-    else:
-        primary = MockAIService()
-        fallback = MockAIService()
-    return AIRouter(primary=primary, fallback=fallback)
+    from app.services.ai import build_ai_router
+    return build_ai_router()
 
 
 def _build_paper_service(db: Session) -> PaperService:
     """构建论文服务"""
     crawler = CrawlerEngine(ieee_api_key=settings.IEEE_API_KEY)
-
-    if settings.has_ai_configured:
-        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
-        fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
-        ai_router = AIRouter(primary=primary, fallback=fallback)
-    else:
-        mock_service = MockAIService()
-        ai_router = AIRouter(primary=mock_service, fallback=mock_service)
-
+    ai_router = _build_ai_router()
     analyzer = PaperAnalyzer(ai_router=ai_router)
     return PaperService(db=db, crawler_engine=crawler, analyzer=analyzer)
 
