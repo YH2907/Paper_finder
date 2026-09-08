@@ -218,19 +218,21 @@ class RecommendationService:
             # 构建搜索查询
             search_queries = []
             if force_online:
-                # 刷新时直接搜索最新论文
+                # 刷新时搜索所有主题的所有关键词
                 for topic in topics:
                     for kw in topic.keywords:
                         cleaned = self._clean_keyword(kw)
                         if cleaned:
-                            search_queries.append(cleaned)
-                            break
-                    if search_queries:
-                        break
-                # 如果没有有效关键词，使用第一个主题的名称
+                            # 如果清理后包含空格，拆分成多个关键词
+                            if ' ' in cleaned:
+                                search_queries.extend(cleaned.split())
+                            else:
+                                search_queries.append(cleaned)
+                # 去重并限制数量
+                search_queries = list(set(search_queries))[:8]
+                # 如果没有有效关键词，使用主题名称
                 if not search_queries and topics:
                     search_queries = [topics[0].name]
-                search_queries = search_queries[:2]
             else:
                 search_queries = self._build_search_queries(topics)
 
