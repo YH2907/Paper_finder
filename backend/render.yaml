@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: paper-finder-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        value: sqlite:///./paperfinder.db
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://frontend-phi-seven-t4c2ie89e3.vercel.app,http://localhost:3000
+    healthCheckPath: /health
