@@ -2,23 +2,29 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖
+# Install system dependencies (libxml2/libxslt for lxml)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
+    libxml2-dev \
+    libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件
+# Copy dependency file
 COPY requirements.txt .
 
-# 安装 Python 依赖
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制应用代码
+# Copy application code
 COPY . .
 
-# 暴露端口
+# Create data directory for persistent SQLite (Render mounts a disk here)
+RUN mkdir -p /app/data
+
+# Expose port (Render overrides this via PORT env var)
 EXPOSE 8000
 
-# 启动命令
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Start command - uses start.sh for flexibility
+RUN chmod +x start.sh
+CMD ["./start.sh"]

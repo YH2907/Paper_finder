@@ -1,22 +1,39 @@
 services:
   - type: web
-    name: paper-finder-backend
-    runtime: python
-    region: oregon
+    name: paper-finder-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: ./start.sh
+    region: singapore
+    branch: main
+    rootDir: backend
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: DEBUG
+        value: "false"
       - key: DATABASE_URL
-        value: sqlite:///./paperfinder.db
+        value: sqlite:///./data/paperfinder.db
+      - key: CORS_ORIGINS
+        value: '["https://your-frontend-domain.onrender.com"]'
+      # Secrets - set these in Render dashboard
       - key: SECRET_KEY
-        generateValue: true
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: CORS_ORIGINS
-        value: https://frontend-phi-seven-t4c2ie89e3.vercel.app,http://localhost:3000
-    healthCheckPath: /health
+      - key: IEEE_API_KEY
+        sync: false
+      - key: SEMANTIC_SCHOLAR_API_KEY
+        sync: false
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
