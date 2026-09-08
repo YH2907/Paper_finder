@@ -249,9 +249,12 @@ class RecommendationService:
                 logger.info(f"[推荐] 在线搜索返回 {len(raw_results)} 条结果")
 
                 for raw in raw_results:
+                    # 严格过滤：标题或摘要中必须至少匹配一个完整关键词
+                    if not self._strict_keyword_match(raw, all_keywords, all_exclude_keywords):
+                        continue
                     # 计算相关性分数
                     relevance = self._calculate_relevance(raw, all_keywords, all_exclude_keywords)
-                    if relevance > 0:
+                    if relevance > 0.15:
                         raw["_relevance_score"] = relevance
                         paper = self._upsert_paper(raw)
                         if paper:
@@ -281,8 +284,41 @@ class RecommendationService:
 
         return selected
 
+    def _strict_keyword_match(self, paper: dict, keywords: list[str], exclude_keywords: list[str]) -> bool:
+        """严格关键词匹配：标题或摘要中必须至少包含一个完整关键词（单词边界匹配）
+        
+        Args:
+            paper: 论文字典
+            keywords: 搜索关键词列表
+            exclude_keywords: 排除关键词列表
+        Returns:
+            True 表示匹配，False 表示不相关
+        """
+        title = (paper.get("title") or "").lower()
+        abstract = (paper.get("abstract") or "").lower()
+        text = f"{title} {abstract}"
+        
+        # 检查排除关键词
+        if exclude_keywords:
+            for kw in exclude_keywords:
+                # 使用单词边界匹配排除词
+                pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                if re.search(pattern, text):
+                    return False
+        
+        if not keywords:
+            return False  # 没有关键词时不推荐
+        
+        # 必须至少匹配一个完整关键词（单词边界）
+        for kw in keywords:
+            pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+            if re.search(pattern, text):
+                return True
+        
+        return False  # 没有匹配任何关键词
+
     def _calculate_relevance(self, paper: dict, keywords: list[str], exclude_keywords: list[str]) -> float:
-        """计算论文与关键词的相关性分数
+        """计算论文与关键词的相关性分数（使用单词边界匹配）
 
         Args:
             paper: 论文字典
@@ -295,10 +331,11 @@ class RecommendationService:
         abstract = (paper.get("abstract") or "").lower()
         text = f"{title} {abstract}"
 
-        # 检查排除关键词
+        # 检查排除关键词（单词边界）
         if exclude_keywords:
             for kw in exclude_keywords:
-                if kw.lower() in text:
+                pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                if re.search(pattern, text):
                     return 0.0
 
         if not keywords:
@@ -309,10 +346,11 @@ class RecommendationService:
 
         for kw in keywords:
             kw_lower = kw.lower()
-            if kw_lower in title:
+            pattern = r'\b' + re.escape(kw_lower) + r'\b'
+            if re.search(pattern, title):
                 score += 0.3  # 标题匹配权重高
                 matched_keywords += 1
-            elif kw_lower in abstract:
+            elif re.search(pattern, abstract):
                 score += 0.1  # 摘要匹配权重较低
                 matched_keywords += 1
 
