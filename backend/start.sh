@@ -13,7 +13,7 @@ export PYTHONPATH=/app:$PYTHONPATH
 
 # 强制设置正确的环境变量（覆盖 Render Dashboard 可能的错误配置）
 export DATABASE_URL="sqlite:////app/data/paperfinder.db"
-export GROQ_MODEL="groq/compound"
+export GROQ_MODEL="llama-3.3-70b-versatile"
 export CORS_ORIGINS="*"
 
 echo "📊 Environment:"

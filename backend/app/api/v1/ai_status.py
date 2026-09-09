@@ -20,7 +20,7 @@ def get_ai_status():
             "ai_configured": has_ai,
             "groq_configured": has_groq,
             "gemini_configured": has_gemini,
-            "groq_model": settings.GROQ_MODEL if has_groq else None,
+            "groq_model": settings.get_groq_model() if has_groq else None,
             "gemini_model": settings.GEMINI_MODEL if has_gemini else None,
         }
     )

@@ -22,7 +22,6 @@ VALID_GROQ_MODELS = {
     "llama-3.1-8b-instant",     # 最快
     "gemma2-9b-it",
     "mixtral-8x7b-32768",
-    "groq/compound",            # 较慢但稳定
     "groq/compound-mini",
 }
 
