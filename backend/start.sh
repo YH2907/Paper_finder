@@ -22,11 +22,25 @@ echo "  GROQ_MODEL=$GROQ_MODEL"
 echo "  CORS_ORIGINS=$CORS_ORIGINS"
 echo "  GROQ_API_KEY=${GROQ_API_KEY:+[SET]}"
 
+# 诊断 Persistent Disk
+echo ""
+echo "💾 Persistent Disk 诊断:"
+echo "  /app/data 目录存在: $([ -d /app/data ] && echo '是' || echo '否')"
+echo "  /app/data 可写: $([ -w /app/data ] && echo '是' || echo '否')"
+echo "  /app/data 内容:"
+ls -la /app/data/ 2>/dev/null || echo "    (目录不存在或无法访问)"
+echo ""
+
 # Initialize database (create tables if they don't exist)
 echo "📦 Initializing database..."
 python -c "from app.core.database import init_db; init_db()"
 
+# 检查数据库文件
+echo "  数据库文件:"
+ls -la /app/data/paperfinder.db 2>/dev/null || echo "    (数据库文件不存在)"
+
 # Start the FastAPI server
+echo ""
 echo "🌐 Starting server on port $PORT..."
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
