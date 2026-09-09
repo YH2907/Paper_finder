@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # AI 服务 API Keys
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # 使用当前可用的模型
+    GROQ_MODEL: str = "groq/compound"  # Groq 官方模型，稳定可用
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
 
