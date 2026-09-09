@@ -23,12 +23,23 @@ class PaperService:
         # Get user_papers associations
         user_papers = self.db.client.select('user_papers', user_id=str(user_id), order='pushed_at.desc', limit=limit)
         
-        # Get paper details
+        if not user_papers:
+            return []
+        
+        # 批量查询所有论文（避免 N+1 问题）
+        paper_ids = [up['paper_id'] for up in user_papers]
+        if not paper_ids:
+            return []
+        
+        # 使用 in 查询一次性获取所有论文
+        papers_list = self.db.client.select('papers', id=('in', f'({",".join(paper_ids)})'))
+        papers_map = {p['id']: p for p in papers_list}
+        
+        # 合并 user_papers 的元数据
         result = []
         for up in user_papers:
-            papers = self.db.client.select('papers', id=up['paper_id'])
-            if papers:
-                paper = papers[0]
+            paper = papers_map.get(up['paper_id'])
+            if paper:
                 paper['is_bookmarked'] = up.get('is_bookmarked', False)
                 paper['is_read'] = up.get('is_read', False)
                 paper['pushed_at'] = up.get('pushed_at')
@@ -55,11 +66,22 @@ class PaperService:
         """获取用户收藏的论文"""
         user_papers = self.db.client.select('user_papers', user_id=str(user_id), is_bookmarked='true', order='updated_at.desc', limit=limit)
         
+        if not user_papers:
+            return []
+        
+        # 批量查询所有论文（避免 N+1 问题）
+        paper_ids = [up['paper_id'] for up in user_papers]
+        if not paper_ids:
+            return []
+        
+        papers_list = self.db.client.select('papers', id=('in', f'({",".join(paper_ids)})'))
+        papers_map = {p['id']: p for p in papers_list}
+        
+        # 合并数据
         result = []
         for up in user_papers:
-            papers = self.db.client.select('papers', id=up['paper_id'])
-            if papers:
-                paper = papers[0]
+            paper = papers_map.get(up['paper_id'])
+            if paper:
                 paper['is_bookmarked'] = True
                 paper['is_read'] = up.get('is_read', False)
                 paper['bookmarked_at'] = up.get('updated_at')
