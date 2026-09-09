@@ -14,19 +14,6 @@ ENV_FILE = BACKEND_DIR / ".env"
 # 检测是否在 Render 环境运行
 IS_RENDER = os.environ.get("RENDER", "").lower() == "true" or os.environ.get("RENDER_SERVICE_ID", "") != ""
 
-# Render persistent disk path (production) or local path (development)
-RENDER_DATA_DIR = Path("/app/data")
-if IS_RENDER or RENDER_DATA_DIR.exists():
-    # Running on Render - use persistent disk
-    RENDER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    _DB_PATH = RENDER_DATA_DIR / "paperfinder.db"
-else:
-    # Running locally
-    _DB_PATH = BACKEND_DIR / "paperfinder.db"
-
-# 确保数据库文件路径的 SQLite URL 使用绝对路径（4个斜杠）
-_DB_URL = f"sqlite:///{_DB_PATH.as_posix()}"
-
 
 # 已知可用的 Groq 模型
 VALID_GROQ_MODELS = {
@@ -58,8 +45,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     APP_TIMEZONE: str = "Asia/Shanghai"
 
-    # 数据库配置
-    DATABASE_URL: str = _DB_URL
+    # 数据库配置 - 默认 SQLite（本地），生产环境通过 DATABASE_URL 使用 PostgreSQL
+    DATABASE_URL: str = ""
 
     # Redis 配置 (可选)
     REDIS_URL: str = ""
@@ -101,6 +88,14 @@ class Settings(BaseSettings):
             return self.GROQ_MODEL
         # 无效模型，返回默认值
         return "groq/compound"
+    
+    def get_database_url(self) -> str:
+        """获取数据库 URL（优先使用环境变量，否则使用 SQLite）"""
+        # 优先使用环境变量
+        if self.DATABASE_URL and self.DATABASE_URL.strip():
+            return self.DATABASE_URL
+        # 默认 SQLite（本地开发）
+        return f"sqlite:///{(BACKEND_DIR / 'paperfinder.db').as_posix()}"
 
 
 # 全局单例
