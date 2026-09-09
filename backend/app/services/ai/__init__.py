@@ -23,12 +23,12 @@ def build_ai_router():
     has_gemini = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip())
 
     if has_groq and has_gemini:
-        print(f"[AI Router] Groq({settings.GROQ_MODEL}) + Gemini")
-        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
+        print(f"[AI Router] Groq({settings.get_groq_model()}) + Gemini")
+        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.get_groq_model())
         fallback = GeminiService(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
     elif has_groq:
-        print(f"[AI Router] Groq only ({settings.GROQ_MODEL})")
-        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL)
+        print(f"[AI Router] Groq only ({settings.get_groq_model()})")
+        primary = GroqService(api_key=settings.GROQ_API_KEY, model=settings.get_groq_model())
         fallback = MockAIService()
     elif has_gemini:
         print(f"[AI Router] Gemini only ({settings.GEMINI_MODEL})")

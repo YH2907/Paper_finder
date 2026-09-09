@@ -5,7 +5,6 @@
 import os
 from pathlib import Path
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +28,18 @@ else:
 _DB_URL = f"sqlite:///{_DB_PATH.as_posix()}"
 
 
+# 已知可用的 Groq 模型
+VALID_GROQ_MODELS = {
+    "groq/compound",
+    "groq/compound-mini",
+    "qwen/qwen3.8-27b",
+    "qwen/qwen3.6-27b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "allam-2-7b",
+}
+
+
 class Settings(BaseSettings):
     """应用全局配置"""
 
@@ -36,8 +47,7 @@ class Settings(BaseSettings):
         env_file=str(ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore",  # 忽略额外的环境变量
-        frozen=False,  # 允许修改字段（用于自动纠正无效配置）
+        extra="ignore",
     )
 
     # 应用基本配置
@@ -48,53 +58,20 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     APP_TIMEZONE: str = "Asia/Shanghai"
 
-    # 数据库配置 - 强制使用持久化磁盘（Render）或本地路径
-    # 忽略外部设置的 DATABASE_URL，因为代码自动检测了正确路径
+    # 数据库配置
     DATABASE_URL: str = _DB_URL
-
-    @classmethod
-    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
-        """自定义配置源顺序，确保 DATABASE_URL 不被环境变量覆盖"""
-        # 过滤掉环境变量中的 DATABASE_URL（防止 Render Dashboard 错误配置覆盖）
-        from pydantic_settings.sources import EnvSettingsSource
-        
-        class FilteredEnvSource(EnvSettingsSource):
-            def prepare_field_value(self, field_name: str, field, value: str, value_is_complex: bool):
-                if field_name.upper() == "DATABASE_URL":
-                    return None, False, False  # 忽略环境变量中的 DATABASE_URL
-                return super().prepare_field_value(field_name, field, value, value_is_complex)
-        
-        filtered_env = FilteredEnvSource(settings_cls)
-        return init_settings, filtered_env, dotenv_settings, file_secret_settings
-
-    @model_validator(mode='after')
-    def fix_invalid_groq_model(self):
-        """自动纠正无效的 GROQ_MODEL（Render Dashboard 旧环境变量可能包含已下线模型）"""
-        VALID_GROQ_MODELS = {
-            "groq/compound",
-            "groq/compound-mini",
-            "qwen/qwen3.8-27b",
-            "qwen/qwen3.6-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "allam-2-7b",
-        }
-        if self.GROQ_MODEL and self.GROQ_MODEL not in VALID_GROQ_MODELS:
-            print(f"[Config] 警告: GROQ_MODEL '{self.GROQ_MODEL}' 已下线，自动切换为 groq/compound")
-            self.GROQ_MODEL = "groq/compound"
-        return self
 
     # Redis 配置 (可选)
     REDIS_URL: str = ""
 
     # AI 服务 API Keys
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "groq/compound"  # Groq 官方模型，稳定可用
+    GROQ_MODEL: str = "groq/compound"
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
     # 学术数据源 API Keys（可选）
-    IEEE_API_KEY: str = ""  # IEEE Xplore API Key（可选，无则使用网页搜索）
-    SEMANTIC_SCHOLAR_API_KEY: str = ""  # Semantic Scholar API Key（可选）
+    IEEE_API_KEY: str = ""
+    SEMANTIC_SCHOLAR_API_KEY: str = ""
 
     # JWT 配置
     SECRET_KEY: str = "dev-secret-key-change-in-production"
@@ -113,15 +90,17 @@ class Settings(BaseSettings):
         """将 CORS_ORIGINS 字符串转换为列表"""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
-
     @property
     def has_ai_configured(self) -> bool:
-        """检查是否配置了 AI 服务的 API Key
-
-        Returns:
-            只要配置了任意一个 AI 服务的 API Key 就返回 True
-        """
+        """检查是否配置了 AI 服务的 API Key"""
         return bool(self.GROQ_API_KEY or self.GEMINI_API_KEY)
+    
+    def get_groq_model(self) -> str:
+        """获取有效的 Groq 模型名称（自动纠正无效模型）"""
+        if self.GROQ_MODEL and self.GROQ_MODEL in VALID_GROQ_MODELS:
+            return self.GROQ_MODEL
+        # 无效模型，返回默认值
+        return "groq/compound"
 
 
 # 全局单例
