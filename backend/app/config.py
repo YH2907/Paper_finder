@@ -37,6 +37,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",  # 忽略额外的环境变量
+        frozen=False,  # 允许修改字段（用于自动纠正无效配置）
     )
 
     # 应用基本配置
