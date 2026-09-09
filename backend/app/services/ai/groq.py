@@ -13,8 +13,8 @@ from .base import BaseAIService
 # Groq API 地址
 GROQ_API_URL = "https://api.groq.com/openai/v1"
 
-# 默认模型
-DEFAULT_MODEL = "llama3-70b-8192"
+# 默认模型（使用当前可用的模型）
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 # 论文分析提示词
 PAPER_ANALYSIS_PROMPT = """你是一个学术论文分析助手。请分析以下论文，返回 JSON 格式的结果。

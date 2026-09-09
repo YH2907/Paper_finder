@@ -2,6 +2,7 @@
 
 使用 pydantic-settings 从环境变量加载配置。
 """
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,14 +11,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ENV_FILE = BACKEND_DIR / ".env"
 
+# 检测是否在 Render 环境运行
+IS_RENDER = os.environ.get("RENDER", "").lower() == "true" or os.environ.get("RENDER_SERVICE_ID", "") != ""
+
 # Render persistent disk path (production) or local path (development)
 RENDER_DATA_DIR = Path("/app/data")
-if RENDER_DATA_DIR.exists():
+if IS_RENDER or RENDER_DATA_DIR.exists():
     # Running on Render - use persistent disk
-    DEFAULT_SQLITE_DB_PATH = RENDER_DATA_DIR / "paperfinder.db"
+    RENDER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _DB_PATH = RENDER_DATA_DIR / "paperfinder.db"
 else:
     # Running locally
-    DEFAULT_SQLITE_DB_PATH = BACKEND_DIR / "paperfinder.db"
+    _DB_PATH = BACKEND_DIR / "paperfinder.db"
+
+# 确保数据库文件路径的 SQLite URL 使用绝对路径（4个斜杠）
+_DB_URL = f"sqlite:///{_DB_PATH.as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -38,15 +46,15 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     APP_TIMEZONE: str = "Asia/Shanghai"
 
-    # 数据库配置
-    DATABASE_URL: str = f"sqlite:///{DEFAULT_SQLITE_DB_PATH.as_posix()}"
+    # 数据库配置 - 使用计算好的绝对路径
+    DATABASE_URL: str = _DB_URL
 
     # Redis 配置 (可选)
     REDIS_URL: str = ""
 
     # AI 服务 API Keys
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama3-70b-8192"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # 使用当前可用的模型
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
 
