@@ -5,6 +5,7 @@
 import os
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,7 +57,18 @@ class Settings(BaseSettings):
         # 过滤掉环境变量中的 DATABASE_URL（防止 Render Dashboard 错误配置覆盖）
         from pydantic_settings.sources import EnvSettingsSource
         
-        # 已知可用的 Groq 模型（用于自动纠正无效模型名）
+        class FilteredEnvSource(EnvSettingsSource):
+            def prepare_field_value(self, field_name: str, field, value: str, value_is_complex: bool):
+                if field_name.upper() == "DATABASE_URL":
+                    return None, False, False  # 忽略环境变量中的 DATABASE_URL
+                return super().prepare_field_value(field_name, field, value, value_is_complex)
+        
+        filtered_env = FilteredEnvSource(settings_cls)
+        return init_settings, filtered_env, dotenv_settings, file_secret_settings
+
+    @model_validator(mode='after')
+    def fix_invalid_groq_model(self):
+        """自动纠正无效的 GROQ_MODEL（Render Dashboard 旧环境变量可能包含已下线模型）"""
         VALID_GROQ_MODELS = {
             "groq/compound",
             "groq/compound-mini",
@@ -66,19 +78,10 @@ class Settings(BaseSettings):
             "openai/gpt-oss-20b",
             "allam-2-7b",
         }
-        
-        class FilteredEnvSource(EnvSettingsSource):
-            def prepare_field_value(self, field_name: str, field, value: str, value_is_complex: bool):
-                if field_name.upper() == "DATABASE_URL":
-                    return None, False, False  # 忽略环境变量中的 DATABASE_URL
-                if field_name.upper() == "GROQ_MODEL" and value and value not in VALID_GROQ_MODELS:
-                    # 自动纠正无效的 GROQ_MODEL
-                    print(f"[Config] 警告: GROQ_MODEL '{value}' 已下线，自动切换为 groq/compound")
-                    return "groq/compound", False, False
-                return super().prepare_field_value(field_name, field, value, value_is_complex)
-        
-        filtered_env = FilteredEnvSource(settings_cls)
-        return init_settings, filtered_env, dotenv_settings, file_secret_settings
+        if self.GROQ_MODEL and self.GROQ_MODEL not in VALID_GROQ_MODELS:
+            print(f"[Config] 警告: GROQ_MODEL '{self.GROQ_MODEL}' 已下线，自动切换为 groq/compound")
+            self.GROQ_MODEL = "groq/compound"
+        return self
 
     # Redis 配置 (可选)
     REDIS_URL: str = ""
