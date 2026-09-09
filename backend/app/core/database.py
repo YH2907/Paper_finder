@@ -27,9 +27,9 @@ def _normalize_database_url(database_url: str) -> str:
 # 数据库 URL
 # 开发: sqlite:///./paperfinder.db
 # 生产: postgresql://user:***@localhost/paperfinder
-DATABASE_URL = _normalize_database_url(
-    os.getenv("DATABASE_URL", settings.DATABASE_URL)
-)
+# 优先使用 settings.DATABASE_URL（已在 start.sh 中正确设置）
+DATABASE_URL = settings.DATABASE_URL
+print(f"[Database] 使用路径: {DATABASE_URL}")
 
 # 创建引擎
 if DATABASE_URL.startswith("sqlite"):
