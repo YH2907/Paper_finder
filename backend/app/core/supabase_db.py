@@ -68,6 +68,9 @@ class SupabaseClient:
         """Select with OR filters (PostgREST or=() syntax)."""
         params = {"select": columns}
         if or_filters:
+            # PostgREST requires or=() wrapping
+            if not or_filters.startswith("("):
+                or_filters = f"({or_filters})"
             params["or"] = or_filters
         if order:
             params["order"] = order
