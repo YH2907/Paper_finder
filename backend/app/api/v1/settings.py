@@ -1,11 +1,9 @@
-"""推送设置路由"""
+"""推送设置路由 - Supabase 版本"""
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.deps import get_current_user
-from app.models.user import User
 from app.schemas.common import ResponseBase
 from app.schemas.push_settings import PushSettingsResponse, PushSettingsUpdate
 
@@ -15,17 +13,14 @@ router = APIRouter(prefix="/settings", tags=["设置"])
 async def _trigger_realtime_recommendation(user_id) -> None:
     """推送设置变更后，后台触发一次推荐。"""
     from app.services.scheduler_service import scheduler
-
     await scheduler.trigger_push(user_id, trigger_reason="settings-updated")
 
 
 @router.get("/push", response_model=ResponseBase[PushSettingsResponse])
 async def get_push_settings(
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
-    """
-    获取当前用户的推送设置
-    """
+    """获取当前用户的推送设置"""
     return ResponseBase(
         success=True,
         data=PushSettingsResponse(
@@ -41,8 +36,8 @@ async def get_push_settings(
 async def update_push_settings(
     settings_update: PushSettingsUpdate,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """
     更新当前用户的推送设置
@@ -85,23 +80,23 @@ async def update_push_settings(
                 detail="无效的时间格式，请使用 HH:MM 格式",
             )
 
-    # 更新字段
-    for field, value in update_data.items():
-        setattr(current_user, field, value)
+    # Supabase: update users table directly
+    db.client.update("users", str(current_user.id), update_data)
 
-    db.commit()
-    db.refresh(current_user)
+    # Re-read the user to get latest values
+    updated = db.client.select("users", id=str(current_user.id))
+    user_data = updated[0] if updated else {}
 
-    if current_user.push_enabled:
+    if user_data.get("push_enabled", False):
         background_tasks.add_task(_trigger_realtime_recommendation, current_user.id)
 
     return ResponseBase(
         success=True,
         data=PushSettingsResponse(
-            push_enabled=current_user.push_enabled,
-            push_frequency=current_user.push_frequency,
-            push_time=current_user.push_time,
-            push_count=current_user.push_count,
+            push_enabled=user_data.get("push_enabled", True),
+            push_frequency=user_data.get("push_frequency", "daily"),
+            push_time=user_data.get("push_time", "09:00"),
+            push_count=user_data.get("push_count", 10),
         ),
         message="推送设置更新成功",
     )
