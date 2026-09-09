@@ -7,14 +7,22 @@ from .analyzer import PaperAnalyzer
 from .chat import ChatSession, ChatService as AIChatService
 
 
+# Singleton AI router — avoid creating new httpx clients per request
+_ai_router: AIRouter | None = None
+
+
 def build_ai_router():
-    """统一构建 AI 路由器
+    """统一构建 AI 路由器（单例，复用 httpx client）
     
     - Groq + Gemini：Groq 为主，Gemini 为备
     - 仅 Groq：Groq 为主，Mock 为备
     - 仅 Gemini：Mock 为主，Gemini 为备
     - 都没有：Mock 为主，Mock 为备
     """
+    global _ai_router
+    if _ai_router is not None:
+        return _ai_router
+
     from app.config import settings
     from .groq import GroqService
     from .gemini import GeminiService
@@ -39,7 +47,8 @@ def build_ai_router():
         primary = MockAIService()
         fallback = MockAIService()
 
-    return AIRouter(primary=primary, fallback=fallback)
+    _ai_router = AIRouter(primary=primary, fallback=fallback)
+    return _ai_router
 
 
 __all__ = [

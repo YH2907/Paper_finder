@@ -15,15 +15,15 @@ ENV_FILE = BACKEND_DIR / ".env"
 IS_RENDER = os.environ.get("RENDER", "").lower() == "true" or os.environ.get("RENDER_SERVICE_ID", "") != ""
 
 
-# 已知可用的 Groq 模型
+# 已知可用的 Groq 模型（按速度排序，推荐快速模型）
 VALID_GROQ_MODELS = {
-    "groq/compound",
+    "llama-3.3-70b-versatile",  # 快且强，推荐
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",     # 最快
+    "gemma2-9b-it",
+    "mixtral-8x7b-32768",
+    "groq/compound",            # 较慢但稳定
     "groq/compound-mini",
-    "qwen/qwen3.8-27b",
-    "qwen/qwen3.6-27b",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "allam-2-7b",
 }
 
 
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # AI 服务 API Keys
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "groq/compound"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # 更快的模型
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
     # 学术数据源 API Keys（可选）
@@ -90,8 +90,8 @@ class Settings(BaseSettings):
         """获取有效的 Groq 模型名称（自动纠正无效模型）"""
         if self.GROQ_MODEL and self.GROQ_MODEL in VALID_GROQ_MODELS:
             return self.GROQ_MODEL
-        # 无效模型，返回默认值
-        return "groq/compound"
+        # 默认使用更快的模型
+        return "llama-3.3-70b-versatile"
     
     def get_database_url(self) -> str:
         """获取数据库 URL（优先使用环境变量，否则使用 SQLite）"""

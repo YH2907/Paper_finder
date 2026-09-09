@@ -25,10 +25,18 @@ class ArxivCrawler(BaseCrawler):
             sort_by: 排序方式 - "relevance" (相关性) 或 "submittedDate" (最新)
         """
         limit = min(limit, 100)
+        # 清理查询：去除无效字符，处理 OR 语法
         query = query.replace("，", " ").replace(",", " ").strip()
+        # 处理 "keyword1 OR keyword2 OR keyword3" 格式
+        parts = [p.strip() for p in query.split(" OR ") if p.strip()]
+        if len(parts) > 1:
+            # 多个关键词用 OR 连接，每个词加 all: 前缀
+            search_query = " OR ".join(f"all:{p}" for p in parts)
+        else:
+            search_query = f"all:{query}"
 
         params = {
-            "search_query": f"all:{query}",
+            "search_query": search_query,
             "start": 0,
             "max_results": limit,
             "sortBy": sort_by,

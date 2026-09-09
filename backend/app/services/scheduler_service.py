@@ -45,7 +45,7 @@ class SchedulerService:
             rec_svc = RecommendationService(db)
             notif_svc = NotificationService(db)
 
-            papers = rec_svc.get_recommendations_for_user(user_id, limit=10)
+            papers = await rec_svc.get_recommendations_for_user(user_id, limit=10)
             if papers:
                 count = rec_svc.push_papers_to_user(user_id, papers)
                 notif_svc.create_notification(
@@ -90,7 +90,7 @@ class SchedulerService:
                 if not push_enabled:
                     continue
 
-                papers = rec_svc.get_recommendations_for_user(user['id'], limit=10)
+                papers = await rec_svc.get_recommendations_for_user(user['id'], limit=10)
                 if papers:
                     count = rec_svc.push_papers_to_user(user['id'], papers)
                     if count > 0:
