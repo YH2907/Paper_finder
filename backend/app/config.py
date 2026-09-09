@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     APP_TIMEZONE: str = "Asia/Shanghai"
 
+    # Supabase 配置
+    SUPABASE_URL: str = ""
+    SUPABASE_SECRET_KEY: str = ""
+
     # 数据库配置 - 默认 SQLite（本地），生产环境通过 DATABASE_URL 使用 PostgreSQL
     DATABASE_URL: str = ""
 

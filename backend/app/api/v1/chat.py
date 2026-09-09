@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from app.core.database import get_db
 from app.api.v1.deps import get_current_user
 from app.models.user import User
@@ -95,21 +97,28 @@ async def send_message(
     chat_service: ChatService = Depends(get_chat_service),
 ):
     """发送消息（非流式）"""
-    result = await chat_service.send_message(
-        chat_id=chat_id,
-        user_id=current_user.id,
-        content=message_in.content,
-    )
-
-    if not result:
+    # Verify chat exists
+    chat = chat_service.get_chat(chat_id, current_user.id)
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="对话不存在或无权访问",
         )
 
+    response = await chat_service.chat(
+        chat_id=chat_id,
+        user_id=current_user.id,
+        content=message_in.content,
+    )
+
     return ResponseBase(
         success=True,
-        data=result,
+        data=MessageResponse(
+            id=uuid.uuid4(),
+            role="assistant",
+            content=response,
+            created_at=datetime.now(timezone.utc),
+        ),
         message="发送消息成功",
     )
 
@@ -137,7 +146,7 @@ async def send_message_stream(
         )
 
     async def event_generator():
-        async for chunk in chat_service.send_message_stream(
+        async for chunk in chat_service.chat_stream(
             chat_id=chat_id,
             user_id=current_user.id,
             content=message_in.content,

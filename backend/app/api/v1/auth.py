@@ -1,5 +1,6 @@
-"""认证路由"""
+"""认证路由 - Supabase 版本"""
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -14,65 +15,61 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 
 @router.post("/register", response_model=ResponseBase[UserResponse], status_code=status.HTTP_201_CREATED)
-async def register(user_in: UserCreate, db: Session = Depends(get_db)):
-    """
-    用户注册
-
-    - **email**: 用户邮箱
-    - **name**: 用户名
-    - **password**: 密码（至少8位）
-    """
+async def register(user_in: UserCreate, db=Depends(get_db)):
+    """用户注册"""
     # 1. 检查邮箱是否已注册
-    existing_user = db.query(User).filter(User.email == user_in.email).first()
-    if existing_user:
+    existing = db.client.select('users', email=user_in.email)
+    if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="该邮箱已被注册",
         )
 
     # 2. 创建用户
-    new_user = User(
-        email=user_in.email,
-        name=user_in.name,
-        password_hash=get_password_hash(user_in.password),
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    user_data = {
+        'id': str(uuid.uuid4()),
+        'email': user_in.email,
+        'name': user_in.name,
+        'password_hash': get_password_hash(user_in.password),
+    }
+    result = db.client.insert('users', user_data)
+    new_user = result[0]
 
     # 3. 返回用户信息
     return ResponseBase(
         success=True,
-        data=UserResponse.model_validate(new_user),
+        data=UserResponse(
+            id=new_user['id'],
+            email=new_user['email'],
+            name=new_user['name'],
+            avatar_url=new_user.get('avatar_url'),
+            created_at=new_user['created_at'],
+        ),
         message="注册成功",
     )
 
 
 @router.post("/login", response_model=ResponseBase[Token])
-async def login(user_in: UserLogin, db: Session = Depends(get_db)):
-    """
-    用户登录
-
-    - **email**: 用户邮箱
-    - **password**: 密码
-    """
+async def login(user_in: UserLogin, db=Depends(get_db)):
+    """用户登录"""
     # 1. 查找用户
-    user = db.query(User).filter(User.email == user_in.email).first()
-    if not user:
+    users = db.client.select('users', email=user_in.email)
+    if not users:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="邮箱或密码错误",
         )
+    user = users[0]
 
     # 2. 验证密码
-    if not verify_password(user_in.password, user.password_hash):
+    if not verify_password(user_in.password, user['password_hash']):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="邮箱或密码错误",
         )
 
     # 3. 生成 JWT token
-    token_data = {"user_id": str(user.id), "email": user.email}
+    token_data = {"user_id": user['id'], "email": user['email']}
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
@@ -88,12 +85,8 @@ async def login(user_in: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=ResponseBase[Token])
-async def refresh_token(current_user: User = Depends(get_current_user)):
-    """
-    刷新访问令牌
-
-    需要在请求头中携带有效的 JWT token
-    """
+async def refresh_token(current_user=Depends(get_current_user)):
+    """刷新访问令牌"""
     token_data = {"user_id": str(current_user.id), "email": current_user.email}
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
@@ -110,14 +103,16 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/me", response_model=ResponseBase[UserResponse])
-async def get_me(current_user: User = Depends(get_current_user)):
-    """
-    获取当前用户信息
-
-    需要在请求头中携带有效的 JWT token
-    """
+async def get_me(current_user=Depends(get_current_user)):
+    """获取当前用户信息"""
     return ResponseBase(
         success=True,
-        data=UserResponse.model_validate(current_user),
+        data=UserResponse(
+            id=str(current_user.id),
+            email=current_user.email,
+            name=current_user.name,
+            avatar_url=getattr(current_user, 'avatar_url', None),
+            created_at=str(current_user.created_at),
+        ),
         message="ok",
     )
