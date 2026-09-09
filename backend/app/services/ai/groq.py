@@ -16,6 +16,17 @@ GROQ_API_URL = "https://api.groq.com/openai/v1"
 # 默认模型（使用当前可用的模型）
 DEFAULT_MODEL = "groq/compound"
 
+# 已知可用的模型列表（用于自动纠正无效模型名）
+VALID_MODELS = {
+    "groq/compound",
+    "groq/compound-mini",
+    "qwen/qwen3.8-27b",
+    "qwen/qwen3.6-27b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "allam-2-7b",
+}
+
 # 论文分析提示词
 PAPER_ANALYSIS_PROMPT = """你是一个学术论文分析助手。请分析以下论文，返回 JSON 格式的结果。
 
@@ -40,8 +51,12 @@ class GroqService(BaseAIService):
 
         Args:
             api_key: Groq API 密钥
-            model: 模型名称，默认为 llama3-70b-8192
+            model: 模型名称，默认为 groq/compound
         """
+        # 自动纠正无效模型名（处理 Render Dashboard 旧环境变量）
+        if model and model not in VALID_MODELS:
+            print(f"[Groq] 警告: 模型 {model} 已下线，自动切换为 {DEFAULT_MODEL}")
+            model = DEFAULT_MODEL
         self.api_key = api_key
         self.model = model or DEFAULT_MODEL
         self.client = httpx.AsyncClient(

@@ -73,7 +73,6 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "groq/compound"  # Groq 官方模型，稳定可用
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
-
     # 学术数据源 API Keys（可选）
     IEEE_API_KEY: str = ""  # IEEE Xplore API Key（可选，无则使用网页搜索）
     SEMANTIC_SCHOLAR_API_KEY: str = ""  # Semantic Scholar API Key（可选）
