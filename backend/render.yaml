@@ -4,12 +4,13 @@ services:
     runtime: docker
     plan: free
     region: oregon
+    branch: main
+    autoDeploy: true
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    rootDir: backend
     healthCheckPath: /health
     envVars:
-      - key: PYTHONPATH
-        value: /opt/render/project/src
       - key: DATABASE_URL
         value: sqlite:////app/data/paperfinder.db
       - key: CORS_ORIGINS
