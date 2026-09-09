@@ -133,14 +133,21 @@ class OpenAlexCrawler(BaseCrawler):
         pdf_url = ""
         oa = work.get("open_access", {})
         if oa and oa.get("is_oa"):
-            pdf_url = oa.get("oa_url", "") or oa.get("primary_location", {}).get("pdf_url", "")
+            pdf_url = oa.get("oa_url", "") or ""
+            # oa_url 可能是 None
+            if not pdf_url:
+                locations = work.get("locations", [])
+                for loc in locations:
+                    if loc and loc.get("pdf_url"):
+                        pdf_url = loc["pdf_url"]
+                        break
 
         # 提取 URL
         url = work.get("id", "") or ""
         # 优先使用期刊 URL
         locations = work.get("locations", [])
         for loc in locations:
-            if loc.get("source", {}).get("host_organization_name"):
+            if loc and loc.get("source") and loc["source"].get("host_organization_name"):
                 source_url = loc.get("source", {}).get("homepage_url", "")
                 if source_url:
                     url = source_url
@@ -189,16 +196,18 @@ class OpenAlexCrawler(BaseCrawler):
         OpenAlex 将摘要存储为倒排索引格式，需要重建为完整文本。
 
         Args:
-            inverted_index: 倒排索引字典
+            inverted_index: 倒排索引字典（可能为 None）
         Returns:
             重建的摘要文本
         """
-        if not inverted_index:
+        if not inverted_index or not isinstance(inverted_index, dict):
             return ""
 
         # 收集所有单词及其位置
         word_positions = []
         for word, positions in inverted_index.items():
+            if positions is None:
+                continue
             for pos in positions:
                 word_positions.append((pos, word))
 

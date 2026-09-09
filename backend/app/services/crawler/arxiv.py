@@ -1,123 +1,175 @@
-"""arXiv 爬虫实现"""
+"""arXiv 爬虫 - Supabase 兼容版
 
-import asyncio
-import re
+使用 arXiv API 搜索预印本论文。
+文档: https://arxiv.org/help/api
+"""
+
 import xml.etree.ElementTree as ET
 from typing import Optional
-from .base import BaseCrawler
 
+import httpx
+
+# arXiv API 地址
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
-ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+
+# Atom XML namespace
+ATOM_NS = "{http://www.w3.org/2005/Atom}"
+OPENSEARCH_NS = "{http://a9.com/-/spec/opensearch/1.1/}"
 
 
-class ArxivCrawler(BaseCrawler):
+class ArxivCrawler:
     """arXiv 论文爬虫"""
 
-    def __init__(self, rate_limit: float = 3.0):
-        super().__init__(rate_limit=rate_limit)
+    def __init__(self, rate_limit: float = 1.0):
+        self.rate_limit = rate_limit
+        self.client = httpx.AsyncClient(
+            timeout=30.0,
+            headers={"User-Agent": "PaperFinderAgent/1.0 (research)"},
+        )
 
     async def search(self, query: str, limit: int = 10, sort_by: str = "relevance") -> list[dict]:
-        """搜索 arXiv 论文
+        """搜索 arXiv 论文"""
+        # 正确构建 search_query
+        # 输入可能是 "AGV OR deadlock OR scheduling"（已含 OR）
+        # 需要识别已有的 OR 运算符，不要把它当关键词
+        import re
+        # 先按 " OR " 分割，得到纯关键词组
+        or_groups = re.split(r'\bOR\b', query)
+        search_parts = []
+        for group in or_groups:
+            group = group.strip()
+            if not group:
+                continue
+            # 每个 group 内可能含空格（多词 AND）
+            words = group.split()
+            for word in words:
+                if ":" in word:
+                    search_parts.append(word)
+                else:
+                    search_parts.append(f"all:{word}")
+        search_query = "+OR+".join(search_parts)
 
-        Args:
-            query: 搜索关键词
-            limit: 返回结果数量
-            sort_by: 排序方式 - "relevance" (相关性) 或 "submittedDate" (最新)
-        """
-        limit = min(limit, 100)
-        # 清理查询：去除无效字符，处理 OR 语法
-        query = query.replace("，", " ").replace(",", " ").strip()
-        # 处理 "keyword1 OR keyword2 OR keyword3" 格式
-        parts = [p.strip() for p in query.split(" OR ") if p.strip()]
-        if len(parts) > 1:
-            # 多个关键词用 OR 连接，每个词加 all: 前缀
-            search_query = " OR ".join(f"all:{p}" for p in parts)
-        else:
-            search_query = f"all:{query}"
-
-        params = {
-            "search_query": search_query,
-            "start": 0,
-            "max_results": limit,
-            "sortBy": sort_by,
-            "sortOrder": "descending",
+        # 排序映射
+        sort_map = {
+            "relevance": ("relevance", "descending"),
+            "newest": ("lastUpdatedDate", "descending"),
+            "submittedDate": ("submittedDate", "descending"),
+            "oldest": ("submittedDate", "ascending"),
         }
+        sort_by_val, sort_order = sort_map.get(sort_by, ("relevance", "descending"))
+
+        # 手动拼接 URL 避免 httpx 参数编码问题
+        url = f"{ARXIV_API_URL}?search_query={search_query}&start=0&max_results={limit}&sortBy={sort_by_val}&sortOrder={sort_order}"
 
         try:
-            response = await self.client.get(ARXIV_API_URL, params=params)
+            response = await self.client.get(url)
             response.raise_for_status()
-            return self._parse_response(response.text)
+            return self._parse_xml(response.text)
         except Exception as e:
             print(f"[arXiv] 搜索失败: {e}")
+            # 回退：只用第一个关键词
+            if len(search_parts) > 1:
+                try:
+                    fallback_url = f"{ARXIV_API_URL}?search_query={search_parts[0]}&start=0&max_results={limit}&sortBy={sort_by_val}&sortOrder={sort_order}"
+                    response = await self.client.get(fallback_url)
+                    response.raise_for_status()
+                    return self._parse_xml(response.text)
+                except Exception as e2:
+                    print(f"[arXiv] 回退搜索也失败: {e2}")
             return []
 
     async def get_paper(self, paper_id: str) -> Optional[dict]:
-        params = {"id_list": paper_id, "max_results": 1}
+        """获取论文详情"""
+        # arXiv ID 格式：如 "2301.12345"
+        url = f"{ARXIV_API_URL}?id_list={paper_id}&max_results=1"
+
         try:
-            response = await self.client.get(ARXIV_API_URL, params=params)
+            response = await self.client.get(url)
             response.raise_for_status()
-            papers = self._parse_response(response.text)
+            papers = self._parse_xml(response.text)
             return papers[0] if papers else None
         except Exception as e:
-            print(f"[arXiv] 获取论文详情失败: {e}")
+            print(f"[arXiv] 获取详情失败: {e}")
             return None
 
-    def _parse_response(self, xml_text: str) -> list[dict]:
-        papers = []
+    async def close(self):
+        """关闭 HTTP 客户端"""
+        await self.client.aclose()
+
+    def _parse_xml(self, xml_text: str) -> list[dict]:
+        """解析 arXiv API 返回的 Atom XML"""
         try:
             root = ET.fromstring(xml_text)
-            for entry in root.findall("atom:entry", ARXIV_NS):
-                paper = self._parse_entry(entry)
-                if paper:
-                    papers.append(paper)
-        except ET.ParseError as e:
-            print(f"[arXiv] XML 解析错误: {e}")
+        except ET.ParseError:
+            return []
+
+        papers = []
+        for entry in root.findall(f"{ATOM_NS}entry"):
+            paper = self._parse_entry(entry)
+            if paper:
+                papers.append(paper)
+
         return papers
 
     def _parse_entry(self, entry) -> Optional[dict]:
-        try:
-            title = entry.find("atom:title", ARXIV_NS)
-            title_text = title.text.strip().replace("\n", " ") if title is not None else ""
-            title_text = re.sub(r"\s+", " ", title_text)
-
-            summary = entry.find("atom:summary", ARXIV_NS)
-            summary_text = summary.text.strip().replace("\n", " ") if summary is not None else ""
-            summary_text = re.sub(r"\s+", " ", summary_text)
-
-            authors = []
-            for author in entry.findall("atom:author", ARXIV_NS):
-                name = author.find("atom:name", ARXIV_NS)
-                if name is not None:
-                    authors.append(name.text.strip())
-
-            pdf_url = ""
-            abs_url = ""
-            for link in entry.findall("atom:link", ARXIV_NS):
-                if link.get("title") == "pdf" or "pdf" in link.get("type", ""):
-                    pdf_url = link.get("href", "")
-                elif link.get("rel") == "alternate":
-                    abs_url = link.get("href", "")
-
-            id_elem = entry.find("atom:id", ARXIV_NS)
-            arxiv_id = ""
-            if id_elem is not None:
-                id_text = id_elem.text.strip()
-                arxiv_id = id_text.split("/abs/")[-1] if "/abs/" in id_text else id_text
-
-            published = entry.find("atom:published", ARXIV_NS)
-            pub_date = published.text.strip() if published is not None else ""
-
-            categories = [cat.get("term", "") for cat in entry.findall("atom:category", ARXIV_NS) if cat.get("term")]
-
-            doi_elem = entry.find("arxiv:doi", ARXIV_NS)
-            doi = doi_elem.text.strip() if doi_elem is not None else ""
-
-            return {
-                "id": arxiv_id, "source": "arxiv", "title": title_text,
-                "abstract": summary_text, "authors": authors,
-                "url": abs_url, "pdf_url": pdf_url,
-                "published": pub_date, "categories": categories, "doi": doi,
-            }
-        except Exception as e:
-            print(f"[arXiv] 解析条目失败: {e}")
+        """解析单个 Atom entry"""
+        # 标题
+        title_el = entry.find(f"{ATOM_NS}title")
+        title = title_el.text.strip() if title_el is not None and title_el.text else ""
+        if not title:
             return None
+
+        # 摘要
+        summary_el = entry.find(f"{ATOM_NS}summary")
+        abstract = summary_el.text.strip() if summary_el is not None and summary_el.text else ""
+
+        # 作者
+        authors = []
+        for author_el in entry.findall(f"{ATOM_NS}author"):
+            name_el = author_el.find(f"{ATOM_NS}name")
+            if name_el is not None and name_el.text:
+                authors.append(name_el.text.strip())
+
+        # arXiv ID
+        id_el = entry.find(f"{ATOM_NS}id")
+        arxiv_url = id_el.text.strip() if id_el is not None and id_el.text else ""
+        arxiv_id = arxiv_url.split("/abs/")[-1] if "/abs/" in arxiv_url else ""
+
+        # 链接
+        pdf_url = ""
+        abs_url = ""
+        for link_el in entry.findall(f"{ATOM_NS}link"):
+            if link_el.get("title") == "pdf":
+                pdf_url = link_el.get("href", "")
+            elif link_el.get("type") == "text/html":
+                abs_url = link_el.get("href", "")
+
+        # 发布时间
+        published_el = entry.find(f"{ATOM_NS}published")
+        updated_el = entry.find(f"{ATOM_NS}updated")
+        published = ""
+        if updated_el is not None and updated_el.text:
+            published = updated_el.text[:10]
+        elif published_el is not None and published_el.text:
+            published = published_el.text[:10]
+
+        # 分类
+        categories = []
+        for cat_el in entry.findall(f"{ATOM_NS}category"):
+            term = cat_el.get("term", "")
+            if term:
+                categories.append(term)
+
+        return {
+            "id": arxiv_id,
+            "source": "arxiv",
+            "title": title,
+            "abstract": abstract,
+            "authors": authors,
+            "url": abs_url or arxiv_url,
+            "pdf_url": pdf_url,
+            "published": published,
+            "categories": categories,
+            "arxiv_id": arxiv_id,
+            "doi": "",
+        }

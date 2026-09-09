@@ -47,6 +47,11 @@ class SemanticScholarCrawler(BaseCrawler):
 
         try:
             response = await self.client.get(url, params=params)
+            if response.status_code == 429:
+                # 限流，等待后重试一次
+                import asyncio
+                await asyncio.sleep(2)
+                response = await self.client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
             papers = data.get("data", [])
