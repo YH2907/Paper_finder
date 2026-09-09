@@ -1,356 +1,298 @@
-"""论文路由"""
+"""论文路由 - Supabase 版本"""
 import uuid
-from datetime import datetime, timezone
+import json
+import logging
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.deps import get_current_user
-from app.models.user import User
-from app.schemas.paper import PaperResponse, PaperListResponse
-from app.schemas.common import ResponseBase
 from app.services.paper_service import PaperService
-from app.services.crawler.engine import CrawlerEngine
-from app.services.ai.analyzer import PaperAnalyzer
-from app.services.ai import build_ai_router
-from app.config import settings
+from app.services.recommendation_service import RecommendationService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/papers", tags=["论文"])
 
-# ── 依赖注入 ──────────────────────────────────────────────
+
+# ── 辅助函数 ──────────────────────────────────────────────
+
+def _dict_to_paper_response(p: dict) -> dict:
+    """将 Supabase dict 转为前端 PaperResponse 格式"""
+    return {
+        "id": p.get("id", ""),
+        "title": p.get("title", ""),
+        "authors": p.get("authors", []) if isinstance(p.get("authors"), list) else json.loads(p.get("authors", "[]")),
+        "abstract": p.get("abstract", ""),
+        "url": p.get("url", ""),
+        "doi": p.get("doi", None),
+        "source": p.get("source", "arxiv"),
+        "published_at": p.get("published_at"),
+        "ai_summary": p.get("ai_summary", None),
+        "ai_problem_solved": p.get("ai_problem_solved", None),
+        "is_bookmarked": p.get("is_bookmarked", False),
+        "is_read": p.get("is_read", False),
+        "is_new": p.get("is_new", False),
+    }
 
 
-def get_crawler_engine() -> CrawlerEngine:
-    """获取爬虫引擎单例"""
-    return CrawlerEngine(ieee_api_key=settings.IEEE_API_KEY)
+def _get_paper_service(db=Depends(get_db)) -> PaperService:
+    return PaperService(db)
 
 
-def get_analyzer() -> PaperAnalyzer:
-    """获取论文分析器"""
-    ai_router = build_ai_router()
-    return PaperAnalyzer(ai_router=ai_router)
+def _get_rec_service(db=Depends(get_db)) -> RecommendationService:
+    return RecommendationService(db)
 
 
-def get_paper_service(
-    db: Session = Depends(get_db),
-    crawler: CrawlerEngine = Depends(get_crawler_engine),
-    analyzer: PaperAnalyzer = Depends(get_analyzer),
-) -> PaperService:
-    """获取论文服务"""
-    return PaperService(db=db, crawler_engine=crawler, analyzer=analyzer)
+# ── 路由 ──────────────────────────────────────────────
 
 
-# ── 路由 (注意：固定路径必须在参数路径之前) ──────────────────
-
-
-@router.get("/", response_model=ResponseBase[PaperListResponse])
+@router.get("/")
 async def get_papers(
-    page: int = Query(1, ge=1, description="页码"),
-    per_page: int = Query(20, ge=1, le=100, description="每页数量"),
-    topic_id: Optional[str] = Query(None, description="按主题筛选"),
-    search: Optional[str] = Query(None, description="搜索关键词"),
-    match_all: bool = Query(False, description="是否要求全部关键词命中"),
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    topic_id: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    match_all: bool = Query(False),
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    获取论文列表
+    """获取用户论文列表（分页）"""
+    user_id = current_user.id
 
-    支持分页和筛选：
-    - **page**: 页码（从1开始）
-    - **per_page**: 每页数量（1-100）
-    - **topic_id**: 按主题筛选
-    - **search**: 搜索标题或摘要
-    - **match_all**: 开启后要求搜索词全部命中
-    """
-    result = paper_service.get_papers(
-        user_id=current_user.id,
-        page=page,
-        per_page=per_page,
-        topic_id=topic_id,
-        search=search,
-        match_all=match_all,
-    )
+    # 获取用户所有论文
+    all_papers = paper_service.get_papers_by_user(user_id, limit=500)
 
-    # 批量获取用户论文状态
-    paper_ids = [p.id for p in result["papers"]]
-    statuses = paper_service.get_user_paper_statuses(current_user.id, paper_ids)
+    # 搜索过滤
+    if search:
+        keywords = [kw.strip().lower() for kw in search.replace("，", ",").replace("；", ";").split(",") if kw.strip()]
+        if keywords:
+            filtered = []
+            for p in all_papers:
+                title = (p.get("title") or "").lower()
+                abstract = (p.get("abstract") or "").lower()
+                text = f"{title} {abstract}"
+                if match_all:
+                    if all(kw in text for kw in keywords):
+                        filtered.append(p)
+                else:
+                    if any(kw in text for kw in keywords):
+                        filtered.append(p)
+            all_papers = filtered
 
-    paper_responses = []
-    for p in result["papers"]:
-        pr = PaperResponse.model_validate(p)
-        status = statuses.get(p.id, {"is_bookmarked": False, "is_read": False, "is_new": False})
-        pr.is_bookmarked = status["is_bookmarked"]
-        pr.is_read = status["is_read"]
-        pr.is_new = status["is_new"]
-        paper_responses.append(pr)
+    # 主题过滤
+    if topic_id:
+        # 获取主题的关键词
+        from app.services.topic_service import TopicService
+        topic_svc = TopicService(paper_service.db)
+        topics = topic_svc.get_topics_by_user(user_id)
+        topic_keywords = []
+        for t in topics:
+            if str(t.get("id")) == str(topic_id):
+                kws = t.get("keywords", [])
+                if isinstance(kws, str):
+                    try:
+                        kws = json.loads(kws)
+                    except Exception:
+                        kws = []
+                topic_keywords = [k.lower() for k in kws]
+                break
+        if topic_keywords:
+            filtered = []
+            for p in all_papers:
+                title = (p.get("title") or "").lower()
+                abstract = (p.get("abstract") or "").lower()
+                text = f"{title} {abstract}"
+                if any(kw in text for kw in topic_keywords):
+                    filtered.append(p)
+            all_papers = filtered
 
-    return ResponseBase(
-        success=True,
-        data=PaperListResponse(
-            papers=paper_responses,
-            total=result["total"],
-            page=result["page"],
-            per_page=result["per_page"],
-        ),
-    )
+    # 分页
+    total = len(all_papers)
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_papers = all_papers[start:end]
+
+    # 标记新论文（20分钟内推送的）
+    now = datetime.now(timezone.utc)
+    for p in page_papers:
+        pushed_at = p.get("pushed_at")
+        if pushed_at:
+            try:
+                if isinstance(pushed_at, str):
+                    pushed_dt = datetime.fromisoformat(pushed_at.replace("Z", "+00:00"))
+                else:
+                    pushed_dt = pushed_at
+                if (now - pushed_dt).total_seconds() < 1200:
+                    p["is_new"] = True
+            except Exception:
+                pass
+
+    return {
+        "success": True,
+        "data": {
+            "papers": [_dict_to_paper_response(p) for p in page_papers],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        },
+    }
 
 
-@router.get("/search", response_model=ResponseBase[list[PaperResponse]])
+@router.get("/search")
 async def search_papers(
-    q: str = Query(..., min_length=1, description="搜索关键词"),
-    limit: int = Query(20, ge=1, le=100, description="返回数量"),
-    online: bool = Query(False, description="是否在线搜索爬虫数据源"),
-    sources: Optional[str] = Query(None, description="数据源，逗号分隔，如 arxiv,semantic_scholar"),
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=100),
+    online: bool = Query(False),
+    sources: Optional[str] = Query(None),
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    搜索论文
+    """搜索论文"""
+    keywords = [kw.strip() for kw in q.replace("，", ",").replace("；", ";").split(",") if kw.strip()]
+    if not keywords:
+        keywords = [q]
 
-    - **q**: 搜索关键词（必填）
-    - **limit**: 返回数量（1-100）
-    - **online**: 是否同时在线搜索（调用爬虫）
-    - **sources**: 指定数据源，逗号分隔
-    """
-    # 本地搜索（支持关键词拆分过滤）
-    papers = paper_service.search_papers(query=q, limit=limit)
+    papers = paper_service.search_papers(keywords, limit=limit)
 
-    # 在线搜索（可选）
     if online:
-        source_list = [s.strip() for s in sources.split(",")] if sources else None
-        online_papers = await paper_service.search_online(query=q, limit=10, sources=source_list)
-        # 合并去重
-        existing_ids = {p.id for p in papers}
-        for p in online_papers:
-            if p.id not in existing_ids:
-                papers.append(p)
+        try:
+            from app.services.crawler.engine import CrawlerEngine
+            engine = CrawlerEngine()
+            source_list = [s.strip() for s in sources.split(",")] if sources else ["arxiv", "openalex"]
+            online_papers = await engine.search(query=q, limit=10, sources=source_list, sort_by="newest")
+            await engine.close()
+            existing_titles = {(p.get("title") or "").lower() for p in papers}
+            for op in online_papers:
+                if (op.get("title") or "").lower() not in existing_titles:
+                    papers.append(op)
+        except Exception as e:
+            logger.warning(f"Online search error: {e}")
 
-    # 按发布时间降序排列（最新在前）
-    papers.sort(
-        key=lambda p: p.published_at if p.published_at else datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-
-    # 批量获取用户论文状态
-    limited_papers = papers[:limit]
-    paper_ids = [p.id for p in limited_papers]
-    statuses = paper_service.get_user_paper_statuses(current_user.id, paper_ids)
-
-    paper_responses = []
-    for p in limited_papers:
-        pr = PaperResponse.model_validate(p)
-        status = statuses.get(p.id, {"is_bookmarked": False, "is_read": False, "is_new": False})
-        pr.is_bookmarked = status["is_bookmarked"]
-        pr.is_read = status["is_read"]
-        pr.is_new = status["is_new"]
-        paper_responses.append(pr)
-
-    return ResponseBase(success=True, data=paper_responses)
+    return {
+        "success": True,
+        "data": [_dict_to_paper_response(p) for p in papers[:limit]],
+    }
 
 
-@router.get("/recommended", response_model=ResponseBase[list[PaperResponse]])
+@router.get("/recommended")
 async def get_recommended_papers(
-    limit: int = Query(10, ge=1, le=50, description="推荐数量"),
-    online: bool = Query(True, description="是否在线实时搜索最新论文"),
-    only_unseen: bool = Query(False, description="是否只返回未推荐过的新论文"),
-    clear_history: bool = Query(False, description="是否清除推荐历史（刷新时使用）"),
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    limit: int = Query(10, ge=1, le=50),
+    online: bool = Query(True),
+    only_unseen: bool = Query(False),
+    clear_history: bool = Query(False),
+    current_user=Depends(get_current_user),
+    rec_service: RecommendationService = Depends(_get_rec_service),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    获取推荐论文（实时搜索）
-    """
-    papers = await paper_service.get_recommendations(
-        user_id=current_user.id,
-        limit=limit,
-        force_online=online,
-        only_unseen=only_unseen,
-        clear_history=clear_history,
-    )
+    """获取推荐论文（实时搜索）"""
+    user_id = current_user.id
 
-    # 新推送的论文已在推荐服务中排在最前面
-    # 批量获取用户论文状态
-    paper_ids = [p.id for p in papers]
-    statuses = paper_service.get_user_paper_statuses(current_user.id, paper_ids)
+    papers = []
+    if online:
+        try:
+            papers = await rec_service.get_recommendations_for_user(user_id, limit=limit)
+        except Exception as e:
+            logger.error(f"Recommendation error: {e}")
 
-    paper_responses = []
+    # 如果在线搜索没有结果，从已推送的论文中返回
+    if not papers:
+        papers = paper_service.get_papers_by_user(user_id, limit=limit)
+
+    # 标记新论文
+    now = datetime.now(timezone.utc)
     for p in papers:
-        pr = PaperResponse.model_validate(p)
-        status = statuses.get(p.id, {"is_bookmarked": False, "is_read": False, "is_new": False})
-        pr.is_bookmarked = status["is_bookmarked"]
-        pr.is_read = status["is_read"]
-        pr.is_new = status["is_new"]
-        paper_responses.append(pr)
+        pushed_at = p.get("pushed_at")
+        if pushed_at:
+            try:
+                if isinstance(pushed_at, str):
+                    pushed_dt = datetime.fromisoformat(pushed_at.replace("Z", "+00:00"))
+                else:
+                    pushed_dt = pushed_at
+                if (now - pushed_dt).total_seconds() < 1200:
+                    p["is_new"] = True
+            except Exception:
+                pass
 
-    # 确保新论文排在最前面（双重保障）
-    paper_responses.sort(key=lambda x: (not x.is_new, x.published_at is None, -(x.published_at.timestamp() if x.published_at else 0)))
+    result = [_dict_to_paper_response(p) for p in papers[:limit]]
 
-    return ResponseBase(success=True, data=paper_responses)
+    # 新论文排前面
+    result.sort(key=lambda x: (not x.get("is_new", False), x.get("published_at") is None))
+
+    return {"success": True, "data": result}
 
 
-@router.get("/bookmarks", response_model=ResponseBase[PaperListResponse])
+@router.get("/bookmarks")
 async def get_bookmarked_papers(
-    page: int = Query(1, ge=1, description="页码"),
-    per_page: int = Query(20, ge=1, le=100, description="每页数量"),
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    获取收藏的论文列表
-    """
-    result = paper_service.get_bookmarked_papers(
-        user_id=current_user.id,
-        page=page,
-        per_page=per_page,
-    )
-    # 收藏列表中的论文 is_bookmarked=True, 还需要查 is_read
-    paper_ids = [p.id for p in result["papers"]]
-    statuses = paper_service.get_user_paper_statuses(current_user.id, paper_ids)
+    """获取收藏的论文"""
+    all_papers = paper_service.get_bookmarked_papers(current_user.id, limit=500)
+    total = len(all_papers)
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_papers = all_papers[start:end]
 
-    paper_responses = []
-    for p in result["papers"]:
-        pr = PaperResponse.model_validate(p)
-        status = statuses.get(p.id, {"is_bookmarked": False, "is_read": False, "is_new": False})
-        pr.is_bookmarked = True  # 来自收藏列表，必然是 True
-        pr.is_read = status["is_read"]
-        pr.is_new = status["is_new"]
-        paper_responses.append(pr)
-
-    return ResponseBase(
-        success=True,
-        data=PaperListResponse(
-            papers=paper_responses,
-            total=result["total"],
-            page=result["page"],
-            per_page=result["per_page"],
-        ),
-    )
+    return {
+        "success": True,
+        "data": {
+            "papers": [_dict_to_paper_response(p) for p in page_papers],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        },
+    }
 
 
 # ── 参数路径 (必须在固定路径之后) ──────────────────────────
 
 
-@router.get("/{paper_id}", response_model=ResponseBase[PaperResponse])
+@router.get("/{paper_id}")
 async def get_paper(
-    paper_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    paper_id: str,
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    获取论文详情
-
-    - **paper_id**: 论文ID
-    """
-    paper = paper_service.get_paper(paper_id)
+    """获取论文详情"""
+    paper = paper_service.get_paper_by_id(paper_id)
     if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="论文不存在")
-    pr = PaperResponse.model_validate(paper)
-    statuses = paper_service.get_user_paper_statuses(current_user.id, [paper.id])
-    status_data = statuses.get(paper.id, {"is_bookmarked": False, "is_read": False, "is_new": False})
-    pr.is_bookmarked = status_data["is_bookmarked"]
-    pr.is_read = status_data["is_read"]
-    pr.is_new = status_data["is_new"]
-    return ResponseBase(success=True, data=pr)
+        raise HTTPException(status_code=404, detail="论文不存在")
+    return {"success": True, "data": _dict_to_paper_response(paper)}
 
 
-@router.post("/{paper_id}/analyze", response_model=ResponseBase[dict])
-async def analyze_paper(
-    paper_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
-):
-    """
-    AI 分析论文
-
-    调用 AI 服务对论文进行分析，生成摘要和问题识别。
-    - **paper_id**: 论文ID
-    """
-    paper = paper_service.get_paper(paper_id)
-    if not paper:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="论文不存在")
-
-    if paper.ai_summary:
-        # 已有分析结果，直接返回
-        return ResponseBase(
-            success=True,
-            data={
-                "summary": paper.ai_summary,
-                "problem_solved": paper.ai_problem_solved,
-                "cached": True,
-            },
-        )
-
-    # 调用 AI 分析
-    if paper_service.analyzer:
-        analysis = await paper_service.analyzer.analyze(paper.title, paper.abstract)
-        # 保存分析结果
-        paper.ai_summary = analysis.get("summary", "")
-        paper.ai_problem_solved = "\n".join(analysis.get("problems", []))
-        paper_service.db.commit()
-
-        return ResponseBase(
-            success=True,
-            data={
-                **analysis,
-                "cached": False,
-                "mock_mode": not settings.has_ai_configured,
-            },
-        )
-
-    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI 分析服务不可用")
-
-
-@router.post("/{paper_id}/bookmark", status_code=status.HTTP_201_CREATED)
+@router.post("/{paper_id}/bookmark", status_code=201)
 async def bookmark_paper(
-    paper_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    paper_id: str,
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    收藏论文
-
-    - **paper_id**: 论文ID
-    """
-    try:
-        paper_service.bookmark_paper(user_id=current_user.id, paper_id=paper_id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return ResponseBase(success=True, message="收藏成功")
+    """收藏论文"""
+    paper_service.bookmark_paper(user_id=current_user.id, paper_id=paper_id)
+    return {"success": True, "message": "收藏成功"}
 
 
-@router.delete("/{paper_id}/bookmark", status_code=status.HTTP_200_OK)
+@router.delete("/{paper_id}/bookmark")
 async def unbookmark_paper(
-    paper_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    paper_id: str,
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    取消收藏论文
-
-    - **paper_id**: 论文ID
-    """
-    try:
-        paper_service.unbookmark_paper(user_id=current_user.id, paper_id=paper_id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return ResponseBase(success=True, message="取消收藏成功")
+    """取消收藏"""
+    paper_service.unbookmark_paper(user_id=current_user.id, paper_id=paper_id)
+    return {"success": True, "message": "取消收藏成功"}
 
 
-@router.post("/{paper_id}/read", status_code=status.HTTP_200_OK)
+@router.post("/{paper_id}/read")
 async def mark_paper_read(
-    paper_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    paper_service: PaperService = Depends(get_paper_service),
+    paper_id: str,
+    current_user=Depends(get_current_user),
+    paper_service: PaperService = Depends(_get_paper_service),
 ):
-    """
-    标记论文已读
-
-    - **paper_id**: 论文ID
-    """
-    try:
-        paper_service.mark_read(user_id=current_user.id, paper_id=paper_id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return ResponseBase(success=True, message="已标记为已读")
+    """标记论文已读"""
+    paper_service.mark_as_read(user_id=current_user.id, paper_id=paper_id)
+    return {"success": True, "message": "已标记为已读"}
