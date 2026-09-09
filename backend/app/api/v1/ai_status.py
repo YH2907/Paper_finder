@@ -26,4 +26,18 @@ def get_ai_status():
     )
 
 
+@router.get("/debug")
+def get_debug_info():
+    """调试端点：显示完整的配置信息"""
+    return {
+        "GROQ_API_KEY_set": bool(settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip()),
+        "GROQ_MODEL": settings.GROQ_MODEL,
+        "GEMINI_API_KEY_set": bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip()),
+        "GEMINI_MODEL": settings.GEMINI_MODEL,
+        "DATABASE_URL": settings.DATABASE_URL,
+        "APP_ENV": settings.APP_ENV,
+        "version": "v2-model-validator",
+    }
+
+
 
