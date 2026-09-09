@@ -46,8 +46,24 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     APP_TIMEZONE: str = "Asia/Shanghai"
 
-    # 数据库配置 - 使用计算好的绝对路径
+    # 数据库配置 - 强制使用持久化磁盘（Render）或本地路径
+    # 忽略外部设置的 DATABASE_URL，因为代码自动检测了正确路径
     DATABASE_URL: str = _DB_URL
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
+        """自定义配置源顺序，确保 DATABASE_URL 不被环境变量覆盖"""
+        # 过滤掉环境变量中的 DATABASE_URL（防止 Render Dashboard 错误配置覆盖）
+        from pydantic_settings.sources import EnvSettingsSource
+        
+        class FilteredEnvSource(EnvSettingsSource):
+            def prepare_field_value(self, field_name: str, field, value: str, value_is_complex: bool):
+                if field_name.upper() == "DATABASE_URL":
+                    return None, False, False  # 忽略环境变量中的 DATABASE_URL
+                return super().prepare_field_value(field_name, field, value, value_is_complex)
+        
+        filtered_env = FilteredEnvSource(settings_cls)
+        return init_settings, filtered_env, dotenv_settings, file_secret_settings
 
     # Redis 配置 (可选)
     REDIS_URL: str = ""
