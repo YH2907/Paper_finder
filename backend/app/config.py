@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # AI 服务 API Keys
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "openai/gpt-oss-20b"  # 最簡單快速的單模型
+    GROQ_MODEL: str = "qwen/qwen3.8-27b"  # 智力最好且快速
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
     # 学术数据源 API Keys（可选）
@@ -86,8 +86,8 @@ class Settings(BaseSettings):
         """获取有效的 Groq 模型名称（自动纠正无效模型）"""
         if self.GROQ_MODEL and self.GROQ_MODEL in VALID_GROQ_MODELS:
             return self.GROQ_MODEL
-        # llama 系列已从 Groq 下架，回退到最簡單快速的模型
-        return "openai/gpt-oss-20b"
+        # llama 系列已从 Groq 下架，回退到智力最好的模型
+        return "qwen/qwen3.8-27b"
     
 # 全局单例
 settings = Settings()

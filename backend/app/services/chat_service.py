@@ -103,6 +103,32 @@ class ChatService:
         }
         self.db.client.insert('messages', msg_data)
 
+    def _build_system_prompt(self, chat_id) -> str:
+        """构建系统提示词，如果对话关联论文则注入论文上下文"""
+        prompt = DEFAULT_SYSTEM_PROMPT
+        try:
+            chats = self.db.client.select('chats', id=str(chat_id))
+            if chats and chats[0].get('paper_id'):
+                papers = self.db.client.select('papers', id=str(chats[0]['paper_id']))
+                if papers:
+                    p = papers[0]
+                    title = p.get('title', '')
+                    abstract = p.get('abstract', '') or ''
+                    authors = p.get('authors') or []
+                    if isinstance(authors, str):
+                        authors_str = authors
+                    else:
+                        authors_str = ', '.join(authors[:5])
+                    prompt += f"""
+
+当前对话关联的论文上下文（用户的问题很可能是关于这篇论文的，请直接基于它回答，不要反问用户是哪篇论文）：
+标题：{title}
+作者：{authors_str}
+摘要：{abstract[:2000]}"""
+        except Exception as e:
+            print(f"[ChatService] 加载论文上下文失败: {e}")
+        return prompt
+
     async def chat_stream(self, chat_id, user_id, content: str) -> AsyncGenerator[str, None]:
         """流式对话"""
         # Save user message
@@ -112,7 +138,7 @@ class ChatService:
         messages = self.db.client.select('messages', chat_id=str(chat_id), order='created_at.asc')
         history = [{"role": m['role'], "content": m['content']} for m in messages]
         # 注入系统提示词（必须在最前面）
-        history = [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}] + history
+        history = [{"role": "system", "content": self._build_system_prompt(chat_id)}] + history
 
         # Get AI response
         if self.ai_router:
@@ -134,7 +160,7 @@ class ChatService:
         messages = self.db.client.select('messages', chat_id=str(chat_id), order='created_at.asc')
         history = [{"role": m['role'], "content": m['content']} for m in messages]
         # 注入系统提示词（必须在最前面）
-        history = [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}] + history
+        history = [{"role": "system", "content": self._build_system_prompt(chat_id)}] + history
 
         if self.ai_router:
             response = await self.ai_router.chat(history)
