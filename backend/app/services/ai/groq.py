@@ -83,6 +83,8 @@ class GroqService(BaseAIService):
             AI 回复文本
         """
         url = f"{GROQ_API_URL}/chat/completions"
+        # 只保留 system + 最近 10 条消息，避免历史累积拖慢响应
+        messages = self._trim_messages(messages)
         payload = {
             "model": model or self.model,
             "messages": messages,
@@ -90,17 +92,34 @@ class GroqService(BaseAIService):
             "max_tokens": 2048,
         }
 
-        try:
-            response = await self.client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-        except httpx.HTTPStatusError as e:
-            print(f"[Groq] API 错误: {e.response.status_code} - {e.response.text}")
-            raise
-        except Exception as e:
-            print(f"[Groq] 请求失败: {e}")
-            raise
+        last_err = None
+        for attempt in range(3):
+            try:
+                response = await self.client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"].strip()
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                print(f"[Groq] API 错误: {status_code} - {e.response.text[:200]}")
+                last_err = e
+                # 429 限流 / 5xx 服务器错误：退避重试
+                if status_code == 429 or status_code >= 500:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                raise
+            except Exception as e:
+                print(f"[Groq] 请求失败: {e}")
+                last_err = e
+                await asyncio.sleep(1.5 * (attempt + 1))
+        raise last_err or RuntimeError("Groq AI 服务不可用")
+
+    @staticmethod
+    def _trim_messages(messages: list[dict], max_messages: int = 10) -> list[dict]:
+        """保留 system 消息 + 最近 max_messages 条对话，控制上下文长度"""
+        system_msgs = [m for m in messages if m.get("role") == "system"]
+        other_msgs = [m for m in messages if m.get("role") != "system"]
+        return system_msgs + other_msgs[-max_messages:]
 
     async def chat_stream(
         self, messages: list[dict], model: str = None
@@ -117,6 +136,7 @@ class GroqService(BaseAIService):
             逐块文本片段
         """
         url = f"{GROQ_API_URL}/chat/completions"
+        messages = self._trim_messages(messages)
         payload = {
             "model": model or self.model,
             "messages": messages,
@@ -125,32 +145,47 @@ class GroqService(BaseAIService):
             "stream": True,
         }
 
-        try:
-            async with self.client.stream("POST", url, json=payload) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    # SSE 格式: "data: {...}" 或 "data: [DONE]"
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]  # 去掉 "data: " 前缀
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content")
-                        if content:
-                            yield content
-                    except json.JSONDecodeError:
-                        continue
-        except httpx.HTTPStatusError as e:
-            print(f"[Groq] 流式 API 错误: {e.response.status_code} - {e.response.text}")
-            raise
-        except Exception as e:
-            print(f"[Groq] 流式请求失败: {e}")
-            raise
+        last_err = None
+        for attempt in range(3):
+            try:
+                async with self.client.stream("POST", url, json=payload) as response:
+                    # 注意：stream 模式下访问 response.text 前必须先 read()
+                    if response.status_code != 200:
+                        await response.aread()
+                        body = response.text[:300]
+                        print(f"[Groq] 流式 API 错误: {response.status_code} - {body}")
+                        if response.status_code == 429 or response.status_code >= 500:
+                            last_err = RuntimeError(f"Groq HTTP {response.status_code}: {body}")
+                            await asyncio.sleep(1.5 * (attempt + 1))
+                            continue
+                        raise RuntimeError(f"Groq HTTP {response.status_code}: {body}")
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        # SSE 格式: "data: {...}" 或 "data: [DONE]"
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]  # 去掉 "data: " 前缀
+                        if data_str.strip() == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+                    return  # 正常结束
+            except httpx.HTTPStatusError as e:
+                print(f"[Groq] 流式 API 错误: {e.response.status_code}")
+                last_err = e
+                await asyncio.sleep(1.5 * (attempt + 1))
+            except Exception as e:
+                print(f"[Groq] 流式请求失败: {type(e).__name__}: {e}")
+                last_err = e
+                await asyncio.sleep(1.5 * (attempt + 1))
+        raise last_err or RuntimeError("Groq AI 服务不可用")
 
     async def analyze_paper(self, title: str, abstract: str) -> dict:
         """使用 Groq 分析论文
