@@ -64,7 +64,7 @@ class PaperService:
 
     def get_bookmarked_papers(self, user_id, limit: int = 100) -> list[dict]:
         """获取用户收藏的论文"""
-        user_papers = self.db.client.select('user_papers', user_id=str(user_id), is_bookmarked='true', order='updated_at.desc', limit=limit)
+        user_papers = self.db.client.select('user_papers', user_id=str(user_id), is_bookmarked='true', order='pushed_at.desc', limit=limit)
         
         if not user_papers:
             return []
@@ -84,7 +84,7 @@ class PaperService:
             if paper:
                 paper['is_bookmarked'] = True
                 paper['is_read'] = up.get('is_read', False)
-                paper['bookmarked_at'] = up.get('updated_at')
+                paper['bookmarked_at'] = up.get('pushed_at')
                 result.append(paper)
         
         return result

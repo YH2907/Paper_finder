@@ -12,7 +12,8 @@ PORT=${PORT:-8000}
 export PYTHONPATH=/app:$PYTHONPATH
 
 # Supabase and Groq credentials must be supplied by the deployment environment.
-export GROQ_MODEL="${GROQ_MODEL:-llama-3.3-70b-versatile}"
+# 强制覆盖 GROQ_MODEL：llama 系列已从 Groq 下架，必须使用 qwen
+export GROQ_MODEL="qwen/qwen3.8-27b"
 
 : "${SUPABASE_URL:?SUPABASE_URL is required}"
 : "${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY is required}"

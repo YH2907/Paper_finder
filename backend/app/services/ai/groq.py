@@ -13,20 +13,20 @@ from .base import BaseAIService
 # Groq API 地址
 GROQ_API_URL = "https://api.groq.com/openai/v1"
 
-# 默认模型（使用更快的模型）
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+# 默认模型（llama 系列已从 Groq 下架，改用 qwen）
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
 # 已知可用的模型列表（用于自动纠正无效模型名）
 VALID_MODELS = {
-    "llama-3.3-70b-versatile",  # 快且强，推荐
+    "qwen/qwen3.8-27b",       # 当前可用，推荐
+    "qwen/qwen3.6-27b",       # 当前可用（带 thinking）
+    "llama-3.3-70b-versatile",
     "llama-3.1-70b-versatile",
-    "llama-3.1-8b-instant",     # 最快
+    "llama-3.1-8b-instant",
     "gemma2-9b-it",
     "mixtral-8x7b-32768",
     "groq/compound",
     "groq/compound-mini",
-    "qwen/qwen3.8-27b",
-    "qwen/qwen3.6-27b",
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
     "allam-2-7b",
