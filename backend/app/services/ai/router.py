@@ -3,7 +3,6 @@
 支持结果缓存以减少重复请求。
 支持流式输出。
 """
-import asyncio
 import hashlib
 import json
 import time
@@ -15,7 +14,7 @@ from .base import BaseAIService
 class AIRouter:
     """AI 服务路由器：主备切换 + 缓存"""
 
-    def __init__(self, primary: BaseAIService, fallback: BaseAIService, cache_ttl: int = 3600):
+    def __init__(self, primary: BaseAIService, fallback: BaseAIService | None = None, cache_ttl: int = 3600):
         """初始化路由器"""
         self.primary = primary
         self.fallback = fallback
@@ -36,14 +35,7 @@ class AIRouter:
         except Exception as e:
             print(f"[Router] 主服务（{type(self.primary).__name__}）失败: {e}")
 
-        try:
-            print(f"[Router] 降级使用备用服务（{type(self.fallback).__name__}）")
-            result = await self.fallback.chat(messages, model)
-            self._set_cache(cache_key, result)
-            return result
-        except Exception as e:
-            print(f"[Router] 备用服务也失败: {e}")
-            raise RuntimeError("所有 AI 服务均不可用")
+        raise RuntimeError("Groq AI 服务不可用")
 
     async def chat_stream(self, messages: list[dict], model: str = None) -> AsyncGenerator[str, None]:
         """流式对话，优先主服务，失败降级备用服务"""
@@ -51,9 +43,8 @@ class AIRouter:
             async for chunk in self.primary.chat_stream(messages, model):
                 yield chunk
         except Exception as e:
-            print(f"[Router] 主服务流式失败: {e}，降级备用服务")
-            async for chunk in self.fallback.chat_stream(messages, model):
-                yield chunk
+            print(f"[Router] Groq 流式服务失败: {e}")
+            raise RuntimeError("Groq AI 服务不可用") from e
 
     async def analyze_paper(self, title: str, abstract: str) -> dict:
         """分析论文，优先 Groq，失败降级 Gemini"""
@@ -69,20 +60,13 @@ class AIRouter:
         except Exception as e:
             print(f"[Router] 主服务分析失败: {e}")
 
-        try:
-            print(f"[Router] 降级使用备用服务进行论文分析")
-            result = await self.fallback.analyze_paper(title, abstract)
-            self._set_cache(cache_key, json.dumps(result, ensure_ascii=False))
-            return result
-        except Exception as e:
-            print(f"[Router] 备用服务也失败: {e}")
-            return {
-                "summary": "",
-                "problems": [],
-                "keywords": [],
-                "methodology": "",
-                "significance": "",
-            }
+        return {
+            "summary": "",
+            "problems": [],
+            "keywords": [],
+            "methodology": "",
+            "significance": "",
+        }
 
     def _make_cache_key(self, prefix: str, *args) -> str:
         content = json.dumps(args, sort_keys=True, ensure_ascii=False)
@@ -116,8 +100,4 @@ class AIRouter:
         self._cache.clear()
 
     async def close(self):
-        await asyncio.gather(
-            self.primary.close(),
-            self.fallback.close(),
-            return_exceptions=True,
-        )
+        await self.primary.close()

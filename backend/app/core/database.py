@@ -25,7 +25,9 @@ if USE_SUPABASE:
     engine = None
     SessionLocal = None
 else:
-    print("[Database] Supabase not configured, using SQLite")
+    raise RuntimeError(
+        "Supabase is required. Set SUPABASE_URL and SUPABASE_SECRET_KEY before starting the backend."
+    )
     
     def _normalize_database_url(database_url: str) -> str:
         """规范化数据库 URL，避免因启动目录变化导致连接到不同 SQLite 文件。"""

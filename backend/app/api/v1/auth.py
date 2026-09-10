@@ -2,12 +2,17 @@
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
 from app.schemas.common import ResponseBase
 from app.core.database import get_db
-from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token
+from app.core.security import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    oauth2_scheme,
+)
 from app.models.user import User
 from app.api.v1.deps import get_current_user
 
@@ -85,9 +90,14 @@ async def login(user_in: UserLogin, db=Depends(get_db)):
 
 
 @router.post("/refresh", response_model=ResponseBase[Token])
-async def refresh_token(current_user=Depends(get_current_user)):
+async def refresh_token(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
     """刷新访问令牌"""
-    token_data = {"user_id": str(current_user.id), "email": current_user.email}
+    token_data = decode_refresh_token(token)
+    users = db.client.select('users', id=str(token_data.user_id))
+    if not users:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+    user = users[0]
+    token_data = {"user_id": str(user['id']), "email": user['email']}
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 

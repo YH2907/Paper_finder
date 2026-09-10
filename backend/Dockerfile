@@ -19,9 +19,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directory for persistent SQLite (Render mounts a disk here)
-RUN mkdir -p /app/data
-
 # Expose port (Render overrides this via PORT env var)
 EXPOSE 8000
 

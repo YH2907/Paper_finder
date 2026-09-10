@@ -15,12 +15,7 @@ from app.schemas.common import ResponseBase
 from app.services.deep_research_service import DeepResearchService
 from app.services.workflow_service import WorkflowService
 from app.services.paper_service import PaperService
-from app.services.crawler.engine import CrawlerEngine
-from app.services.ai.analyzer import PaperAnalyzer
 from app.services.ai.router import AIRouter
-from app.services.ai.groq import GroqService
-from app.services.ai.gemini import GeminiService
-from app.services.ai.mock import MockAIService
 from app.config import settings
 
 router = APIRouter(prefix="/deep-research", tags=["深度研究"])
@@ -34,10 +29,7 @@ def _build_ai_router() -> AIRouter:
 
 def _build_paper_service(db: Session) -> PaperService:
     """构建论文服务"""
-    crawler = CrawlerEngine(ieee_api_key=settings.IEEE_API_KEY)
-    ai_router = _build_ai_router()
-    analyzer = PaperAnalyzer(ai_router=ai_router)
-    return PaperService(db=db, crawler_engine=crawler, analyzer=analyzer)
+    return PaperService(db=db)
 
 
 def get_deep_research_service(

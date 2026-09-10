@@ -146,12 +146,16 @@ async def send_message_stream(
         )
 
     async def event_generator():
-        async for chunk in chat_service.chat_stream(
-            chat_id=chat_id,
-            user_id=current_user.id,
-            content=message_in.content,
-        ):
-            yield chunk
+        try:
+            async for chunk in chat_service.chat_stream(
+                chat_id=chat_id,
+                user_id=current_user.id,
+                content=message_in.content,
+            ):
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'message_id': str(uuid.uuid4())})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

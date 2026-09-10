@@ -46,10 +46,9 @@ class Settings(BaseSettings):
 
     # Supabase 配置
     SUPABASE_URL: str = ""
+    SUPABASE_PUBLISHABLE_KEY: str = ""
     SUPABASE_SECRET_KEY: str = ""
-
-    # 数据库配置 - 默认 SQLite（本地），生产环境通过 DATABASE_URL 使用 PostgreSQL
-    DATABASE_URL: str = ""
+    SUPABASE_JWKS_URL: str = ""
 
     # Redis 配置 (可选)
     REDIS_URL: str = ""
@@ -83,7 +82,7 @@ class Settings(BaseSettings):
     @property
     def has_ai_configured(self) -> bool:
         """检查是否配置了 AI 服务的 API Key"""
-        return bool(self.GROQ_API_KEY or self.GEMINI_API_KEY)
+        return bool(self.GROQ_API_KEY and self.GROQ_API_KEY.strip())
     
     def get_groq_model(self) -> str:
         """获取有效的 Groq 模型名称（自动纠正无效模型）"""
@@ -92,14 +91,5 @@ class Settings(BaseSettings):
         # 默认使用更快的模型
         return "llama-3.3-70b-versatile"
     
-    def get_database_url(self) -> str:
-        """获取数据库 URL（优先使用环境变量，否则使用 SQLite）"""
-        # 优先使用环境变量
-        if self.DATABASE_URL and self.DATABASE_URL.strip():
-            return self.DATABASE_URL
-        # 默认 SQLite（本地开发）
-        return f"sqlite:///{(BACKEND_DIR / 'paperfinder.db').as_posix()}"
-
-
 # 全局单例
 settings = Settings()

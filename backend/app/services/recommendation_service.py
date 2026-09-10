@@ -59,12 +59,25 @@ class RecommendationService:
 
         # 去重：排除已推送的论文
         user_papers = self.db.client.select('user_papers', user_id=str(user_id))
-        pushed_ids = {up.get('paper_id') for up in user_papers}
+        pushed_identifiers = set()
+        for user_paper in user_papers:
+            stored = self.db.client.select('papers', id=user_paper.get('paper_id'))
+            if stored:
+                paper = stored[0]
+                pushed_identifiers.update(
+                    value for value in (
+                        paper.get('id'), paper.get('doi'), paper.get('url'), paper.get('title')
+                    ) if value
+                )
 
         new_papers = []
         for p in papers:
-            paper_key = p.get('doi') or p.get('arxiv_id') or p.get('id') or p.get('title', '')[:50]
-            if paper_key and paper_key not in pushed_ids:
+            paper_identifiers = {
+                value for value in (
+                    p.get('doi'), p.get('arxiv_id'), p.get('id'), p.get('url'), p.get('title')
+                ) if value
+            }
+            if paper_identifiers.isdisjoint(pushed_identifiers):
                 new_papers.append(p)
 
         logger.info(f"Found {len(new_papers)} new papers (out of {len(papers)} fetched)")
@@ -112,18 +125,17 @@ class RecommendationService:
         """推送论文给用户（存入 Supabase）"""
         count = 0
         for paper in papers:
-            # 生成 UUID 作为 paper_id（papers 表 id 是 UUID 类型）
-            paper_uuid = str(uuid.uuid4())
-            # 用 DOI 或 arXiv ID 作为稳定标识
-            stable_id = paper.get('doi') or paper.get('arxiv_id') or paper.get('id', '')
+            doi = str(paper.get('doi', '')).strip()
+            existing = self.db.client.select('papers', doi=doi) if doi else []
+            if not existing and paper.get('url'):
+                existing = self.db.client.select('papers', url=paper['url'])
+            if not existing and paper.get('title'):
+                existing = self.db.client.select('papers', title=paper['title'])
 
-            # 检查是否已推送（通过 stable_id 去重）
-            existing = self.db.client.select(
-                'papers',
-                doi=str(paper.get('doi', '')) if paper.get('doi') else None,
-            ) if paper.get('doi') else []
-
-            if not existing:
+            if existing:
+                paper_uuid = existing[0]['id']
+            else:
+                paper_uuid = str(uuid.uuid4())
                 # 插入论文到 papers 表
                 authors = paper.get('authors', [])
                 if isinstance(authors, list):
@@ -132,7 +144,6 @@ class RecommendationService:
                     authors_json = [str(authors)]
 
                 # DOI 为空时不传，避免 unique constraint 冲突
-                doi = str(paper.get('doi', '')) or ''
                 paper_data = {
                     'id': paper_uuid,
                     'title': str(paper.get('title', ''))[:1024],
@@ -149,6 +160,12 @@ class RecommendationService:
                 except Exception as e:
                     logger.error(f"Insert paper error: {e}")
                     continue
+
+            association = self.db.client.select(
+                'user_papers', user_id=str(user_id), paper_id=str(paper_uuid)
+            )
+            if association:
+                continue
 
             # 创建 user_papers 关联
             up_id = str(uuid.uuid4())

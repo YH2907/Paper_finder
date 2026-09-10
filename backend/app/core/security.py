@@ -109,6 +109,21 @@ def decode_access_token(token: str) -> TokenData:
         )
 
 
+def decode_refresh_token(token: str) -> TokenData:
+    """解码并验证 refresh token。"""
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("type") != "refresh" or payload.get("user_id") is None:
+            raise JWTError("invalid refresh token")
+        return TokenData(user_id=payload["user_id"], email=payload.get("email"))
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的刷新凭据",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """获取当前用户
 
@@ -118,22 +133,26 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     Returns:
         当前用户
     """
-    from app.core.database import SessionLocal
+    from app.core.database import USE_SUPABASE, get_db
     from app.models.user import User
     
     # 解码 token
     token_data = decode_access_token(token)
     
-    # 查询用户
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == token_data.user_id).first()
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="用户不存在",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return user
-    finally:
-        db.close()
+    # 查询用户。主路由使用 app.api.v1.deps，这里保留兼容调用方。
+    session = next(get_db())
+    if USE_SUPABASE:
+        users = session.client.select("users", id=str(token_data.user_id))
+        if not users:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+        from app.core.supabase_db import SupabaseModel
+        return SupabaseModel(User, users[0])
+
+    user = session.query(User).filter(User.id == token_data.user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user

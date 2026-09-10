@@ -1,24 +1,6 @@
 version: '3.8'
 
 services:
-  # PostgreSQL 数据库
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: paperfinder-postgres
-    environment:
-      POSTGRES_USER: paperfinder
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: paperfinder
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U paperfinder"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # Redis 缓存
   redis:
     image: redis:7-alpine
@@ -40,13 +22,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://paperfinder:password@postgres:5432/paperfinder
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -71,13 +54,13 @@ services:
     build: ./backend
     container_name: paperfinder-celery-worker
     environment:
-      - DATABASE_URL=postgresql://paperfinder:password@postgres:5432/paperfinder
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.core.celery_app worker --loglevel=info
@@ -99,5 +82,4 @@ services:
     command: celery -A app.core.celery_app beat --loglevel=info
 
 volumes:
-  postgres_data:
   redis_data:

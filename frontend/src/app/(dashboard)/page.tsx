@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -67,19 +67,11 @@ export default function HomePage() {
   const [newPaperIds, setNewPaperIds] = useState<Set<string>>(new Set());
   const [filterQuery, setFilterQuery] = useState("");
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadData();
-    } else {
-      setLoading(false);
-    }
-  }, [isAuthenticated]);
-
   async function loadData(clearHistory = false) {
     setLoading(true);
     try {
       const [papersRes, topicsRes] = await Promise.all([
-        getRecommendedPapers(10, false, false, clearHistory), // online=false，快速顯示已推送的論文
+        getRecommendedPapers(10, true, false, clearHistory),
         getTopics(),
       ]);
 
@@ -104,6 +96,11 @@ export default function HomePage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    queueMicrotask(() => void loadData());
+  }, [isAuthenticated]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -140,8 +137,6 @@ export default function HomePage() {
         const title = (paper.title || "").toLowerCase();
         const abstract = (paper.abstract || "").toLowerCase();
         const authors = (paper.authors || []).join(" ").toLowerCase();
-        const allText = `${title} ${abstract} ${authors}`;
-        
         // 计算匹配分数
         let score = 0;
         let matchedKeywords = 0;

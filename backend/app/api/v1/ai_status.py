@@ -10,8 +10,7 @@ router = APIRouter(prefix="/ai", tags=["AI"])
 def get_ai_status():
     """检查 AI 配置状态（无需登录）"""
     has_groq = bool(settings.GROQ_API_KEY and settings.GROQ_API_KEY.strip())
-    has_gemini = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip())
-    has_ai = has_groq or has_gemini
+    has_ai = has_groq
     
     return ResponseBase(
         success=True,
@@ -19,9 +18,9 @@ def get_ai_status():
         data={
             "ai_configured": has_ai,
             "groq_configured": has_groq,
-            "gemini_configured": has_gemini,
+            "gemini_configured": False,
             "groq_model": settings.get_groq_model() if has_groq else None,
-            "gemini_model": settings.GEMINI_MODEL if has_gemini else None,
+            "gemini_model": None,
         }
     )
 
