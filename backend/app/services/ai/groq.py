@@ -14,7 +14,7 @@ from .base import BaseAIService
 GROQ_API_URL = "https://api.groq.com/openai/v1"
 
 # 默认模型（llama 系列已从 Groq 下架，改用 qwen）
-DEFAULT_MODEL = "qwen/qwen3.8-27b"
+DEFAULT_MODEL = "groq/compound-mini"
 
 # 已知可用的模型列表（用于自动纠正无效模型名）
 VALID_MODELS = {
@@ -89,7 +89,7 @@ class GroqService(BaseAIService):
             "model": model or self.model,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 2048,
+            "max_tokens": 1024,
         }
 
         last_err = None
@@ -141,7 +141,7 @@ class GroqService(BaseAIService):
             "model": model or self.model,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 2048,
+            "max_tokens": 1024,
             "stream": True,
         }
 

@@ -17,8 +17,9 @@ IS_RENDER = os.environ.get("RENDER", "").lower() == "true" or os.environ.get("RE
 
 # 已知可用的 Groq 模型（按速度排序，推荐快速模型）
 VALID_GROQ_MODELS = {
-    "qwen/qwen3.8-27b",      # 当前可用，推荐
-    "qwen/qwen3.6-27b",      # 当前可用（带 thinking）
+    "groq/compound-mini",    # TPM=70000 配額最高，推薦
+    "qwen/qwen3.8-27b",      # TPM=8000
+    "qwen/qwen3.6-27b",      # TPM=8000（带 thinking）
 }
 
 
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
 
     # AI 服务 API Keys
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "qwen/qwen3.8-27b"  # 当前 Groq 账户可用的对话模型
+    GROQ_MODEL: str = "groq/compound-mini"  # TPM=70000 配額最高，不易觸發 429
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
     # 学术数据源 API Keys（可选）
@@ -84,8 +85,8 @@ class Settings(BaseSettings):
         """获取有效的 Groq 模型名称（自动纠正无效模型）"""
         if self.GROQ_MODEL and self.GROQ_MODEL in VALID_GROQ_MODELS:
             return self.GROQ_MODEL
-        # llama 系列已从 Groq 下架，回退到 qwen
-        return "qwen/qwen3.8-27b"
+        # llama 系列已从 Groq 下架，回退到配額最高的模型
+        return "groq/compound-mini"
     
 # 全局单例
 settings = Settings()
