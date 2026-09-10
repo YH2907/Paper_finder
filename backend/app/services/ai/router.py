@@ -34,8 +34,7 @@ class AIRouter:
             return result
         except Exception as e:
             print(f"[Router] 主服务（{type(self.primary).__name__}）失败: {e}")
-
-        raise RuntimeError("Groq AI 服务不可用")
+            raise RuntimeError(f"Groq AI 服务不可用: {type(e).__name__}: {e}") from e
 
     async def chat_stream(self, messages: list[dict], model: str = None) -> AsyncGenerator[str, None]:
         """流式对话，优先主服务，失败降级备用服务"""
@@ -44,7 +43,7 @@ class AIRouter:
                 yield chunk
         except Exception as e:
             print(f"[Router] Groq 流式服务失败: {e}")
-            raise RuntimeError("Groq AI 服务不可用") from e
+            raise RuntimeError(f"Groq AI 服务不可用: {type(e).__name__}: {e}") from e
 
     async def analyze_paper(self, title: str, abstract: str) -> dict:
         """分析论文，优先 Groq，失败降级 Gemini"""
