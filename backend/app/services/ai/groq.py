@@ -14,11 +14,12 @@ from .base import BaseAIService
 GROQ_API_URL = "https://api.groq.com/openai/v1"
 
 # 默认模型（llama 系列已从 Groq 下架，改用 qwen）
-DEFAULT_MODEL = "groq/compound-mini"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 # 已知可用的模型列表（用于自动纠正无效模型名）
 VALID_MODELS = {
-    "qwen/qwen3.8-27b",       # 当前可用，推荐
+    "openai/gpt-oss-20b",     # 最簡單快速，推荐
+    "qwen/qwen3.8-27b",
     "qwen/qwen3.6-27b",       # 当前可用（带 thinking）
     "llama-3.3-70b-versatile",
     "llama-3.1-70b-versatile",

@@ -111,6 +111,8 @@ class ChatService:
         # Get chat history
         messages = self.db.client.select('messages', chat_id=str(chat_id), order='created_at.asc')
         history = [{"role": m['role'], "content": m['content']} for m in messages]
+        # 注入系统提示词（必须在最前面）
+        history = [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}] + history
 
         # Get AI response
         if self.ai_router:
@@ -131,6 +133,8 @@ class ChatService:
 
         messages = self.db.client.select('messages', chat_id=str(chat_id), order='created_at.asc')
         history = [{"role": m['role'], "content": m['content']} for m in messages]
+        # 注入系统提示词（必须在最前面）
+        history = [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}] + history
 
         if self.ai_router:
             response = await self.ai_router.chat(history)
