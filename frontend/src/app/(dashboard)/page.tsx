@@ -71,7 +71,7 @@ export default function HomePage() {
     setLoading(true);
     try {
       const [papersRes, topicsRes] = await Promise.all([
-        getRecommendedPapers(10, true, false, clearHistory),
+        getRecommendedPapers(10, false, false, clearHistory),
         getTopics(),
       ]);
 
@@ -105,8 +105,7 @@ export default function HomePage() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      // 點擊刷新時觸發在線搜索（會慢一些，但能獲取最新論文）
-      const papersRes = await getRecommendedPapers(10, true, false, true);
+      const papersRes = await getRecommendedPapers(10, false, false, true);
       if (papersRes.success) {
         const newPapers = papersRes.data || [];
         const newIds = newPapers.filter((p) => p.is_new).map((p) => p.id);
