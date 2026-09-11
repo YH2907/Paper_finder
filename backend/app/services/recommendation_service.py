@@ -51,24 +51,30 @@ class RecommendationService:
 
         logger.info(f"Fetching papers for keywords: {unique_keywords[:5]}")
 
-        # 从多个数据源抓取论文
-        papers = await self._fetch_papers(unique_keywords[:5], limit=limit)
+        # 从多个数据源抓取论文（多抓一些，去重后才有新论文）
+        papers = await self._fetch_papers(unique_keywords[:5], limit=max(limit * 3, 30))
         if not papers:
             logger.info("No papers fetched from any source")
             return []
 
-        # 去重：排除已推送的论文
+        # 去重：排除已推送的论文（批量查询，避免 N+1）
         user_papers = self.db.client.select('user_papers', user_id=str(user_id))
         pushed_identifiers = set()
-        for user_paper in user_papers:
-            stored = self.db.client.select('papers', id=user_paper.get('paper_id'))
-            if stored:
-                paper = stored[0]
-                pushed_identifiers.update(
-                    value for value in (
-                        paper.get('id'), paper.get('doi'), paper.get('url'), paper.get('title')
-                    ) if value
+        if user_papers:
+            pushed_paper_ids = [up['paper_id'] for up in user_papers]
+            # 分批 in 查询（PostgREST URL 长度限制）
+            BATCH = 50
+            for i in range(0, len(pushed_paper_ids), BATCH):
+                batch_ids = pushed_paper_ids[i:i + BATCH]
+                stored_papers = self.db.client.select(
+                    'papers', id=('in', f"({','.join(batch_ids)})"),
                 )
+                for paper in stored_papers:
+                    pushed_identifiers.update(
+                        value for value in (
+                            paper.get('id'), paper.get('doi'), paper.get('url'), paper.get('title')
+                        ) if value
+                    )
 
         new_papers = []
         for p in papers:
@@ -102,16 +108,26 @@ class RecommendationService:
             
             results = await asyncio.gather(
                 engine.search(query=arxiv_query, limit=limit, sources=["arxiv"], sort_by="newest"),
-                engine.search(query=space_query, limit=limit, sources=["semantic_scholar"], sort_by="newest"),
                 engine.search(query=space_query, limit=limit, sources=["openalex"], sort_by="newest"),
+                # arXiv 再按相关性抓一批，增加去重后的新论文数量
+                engine.search(query=arxiv_query, limit=limit, sources=["arxiv"], sort_by="relevance"),
+                engine.search(query=space_query, limit=limit, sources=["semantic_scholar"], sort_by="newest"),
                 return_exceptions=True,
             )
             await engine.close()
 
             all_papers = []
+            seen_titles = set()
             for result in results:
                 if isinstance(result, list):
-                    all_papers.extend(result)
+                    for p in result:
+                        # 跨源标题去重
+                        t = (p.get('title') or '').strip().lower()
+                        if t and t in seen_titles:
+                            continue
+                        if t:
+                            seen_titles.add(t)
+                        all_papers.append(p)
                 elif isinstance(result, Exception):
                     logger.warning(f"Source error: {result}")
 

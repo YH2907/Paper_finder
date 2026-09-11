@@ -105,7 +105,8 @@ export default function HomePage() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      const papersRes = await getRecommendedPapers(10, false, false, true);
+      // online=true 触发爬虫实时抓取新论文
+      const papersRes = await getRecommendedPapers(10, true, false, true);
       if (papersRes.success) {
         const newPapers = papersRes.data || [];
         const newIds = newPapers.filter((p) => p.is_new).map((p) => p.id);
