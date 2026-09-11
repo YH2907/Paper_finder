@@ -134,7 +134,9 @@ class RecommendationService:
                 engine.search(query=space_query, limit=limit, sources=["openalex"], sort_by="newest"),
                 # arXiv 再按相关性抓一批，增加去重后的新论文数量
                 engine.search(query=arxiv_query, limit=limit, sources=["arxiv"], sort_by="relevance"),
-                # Semantic Scholar 免费层常年 429，不再调用（arXiv+OpenAlex 已足够）
+                # Crossref：1.5 亿+ 期刊文献，与 arXiv/OpenAlex 互补
+                engine.search(query=space_query, limit=limit, sources=["crossref"], sort_by="relevance"),
+                # Semantic Scholar 免费层常年 429，不再调用
                 return_exceptions=True,
             )
             await engine.close()

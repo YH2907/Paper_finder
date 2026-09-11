@@ -1,7 +1,7 @@
 """爬虫引擎
 
 并发调用多个爬虫源，合并结果并去重。
-支持的数据源：arXiv、Semantic Scholar、IEEE Xplore、OpenAlex。
+支持的数据源：arXiv、Semantic Scholar、IEEE Xplore、OpenAlex、Crossref。
 """
 
 import asyncio
@@ -9,6 +9,7 @@ from typing import Optional
 
 from .arxiv import ArxivCrawler
 from .base import BaseCrawler
+from .crossref import CrossrefCrawler
 from .ieee import IEEECrawler
 from .openalex import OpenAlexCrawler
 from .semantic_scholar import SemanticScholarCrawler
@@ -22,6 +23,7 @@ class CrawlerEngine:
     - Semantic Scholar: 学术搜索引擎
     - IEEE Xplore: 电子工程与计算机科学文献库
     - OpenAlex: 开放的学术论文数据库
+    - Crossref: DOI 注册机构，1.5 亿+ 期刊文献
     """
 
     def __init__(self, ieee_api_key: str = None):
@@ -35,6 +37,7 @@ class CrawlerEngine:
             SemanticScholarCrawler(),
             IEEECrawler(api_key=ieee_api_key),
             OpenAlexCrawler(),
+            CrossrefCrawler(),
         ]
 
         # 构建数据源名称映射
@@ -43,6 +46,7 @@ class CrawlerEngine:
             "semantic_scholar": self.crawlers[1],
             "ieee": self.crawlers[2],
             "openalex": self.crawlers[3],
+            "crossref": self.crawlers[4],
         }
 
     async def search(self, query: str, limit: int = 10, sources: list[str] = None, sort_by: str = "relevance") -> list[dict]:

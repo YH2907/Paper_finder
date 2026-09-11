@@ -1,8 +1,9 @@
 # 爬虫服务模块
-# 数据源：arXiv、Semantic Scholar、IEEE Xplore、OpenAlex
+# 数据源：arXiv、Semantic Scholar、IEEE Xplore、OpenAlex、Crossref
 
 from .arxiv import ArxivCrawler
 from .base import BaseCrawler
+from .crossref import CrossrefCrawler
 from .engine import CrawlerEngine
 from .ieee import IEEECrawler
 from .openalex import OpenAlexCrawler
@@ -14,5 +15,6 @@ __all__ = [
     "SemanticScholarCrawler",
     "IEEECrawler",
     "OpenAlexCrawler",
+    "CrossrefCrawler",
     "CrawlerEngine",
 ]
