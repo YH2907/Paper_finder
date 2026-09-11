@@ -22,14 +22,14 @@ class NotificationService:
         result = self.db.client.insert('notifications', data)
         return result[0]
 
-    def get_notifications(self, user_id, unread_only: bool = False, limit: int = 50) -> list[dict]:
+    def get_notifications(self, user_id, unread_only: bool = False, limit: int = 50, offset: int = 0) -> list[dict]:
         """获取用户的通知"""
         filters = {'user_id': str(user_id)}
         if unread_only:
             filters['is_read'] = 'false'
         
-        notifications = self.db.client.select('notifications', order='created_at.desc', limit=limit, **filters)
-        return notifications
+        notifications = self.db.client.select('notifications', order='created_at.desc', limit=limit + offset, **filters)
+        return notifications[offset:offset + limit]
 
     def get_unread_count(self, user_id) -> int:
         """获取未读通知数量"""
