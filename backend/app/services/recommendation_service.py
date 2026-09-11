@@ -1,4 +1,5 @@
 """推荐服务 - Supabase 版本（含多数据源爬虫）"""
+import re
 import uuid
 import json
 import logging
@@ -8,6 +9,23 @@ from app.services.topic_service import TopicService
 from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
+
+
+def _strict_keyword_match(paper: dict, keywords: list[str]) -> bool:
+    """严格关键词匹配：标题/摘要至少命中一个关键词（词边界），杜绝子串误匹配"""
+    text = ((paper.get('title') or '') + ' ' + (paper.get('abstract') or '')).lower()
+    for kw in keywords:
+        kw = kw.strip().lower()
+        if not kw:
+            continue
+        # 中文关键词无词边界，直接子串匹配
+        if re.search(r'[\u4e00-\u9fff]', kw):
+            if kw in text:
+                return True
+        else:
+            if re.search(r'\b' + re.escape(kw) + r'\b', text):
+                return True
+    return False
 
 
 class RecommendationService:
@@ -56,6 +74,11 @@ class RecommendationService:
         if not papers:
             logger.info("No papers fetched from any source")
             return []
+
+        # 严格关键词过滤：剔除标题/摘要完全不含关键词的无关论文
+        before_filter = len(papers)
+        papers = [p for p in papers if _strict_keyword_match(p, unique_keywords)]
+        logger.info(f"Keyword filter: {before_filter} -> {len(papers)}")
 
         # 去重：排除已推送的论文（批量查询，避免 N+1）
         user_papers = self.db.client.select('user_papers', user_id=str(user_id))

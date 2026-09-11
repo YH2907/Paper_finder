@@ -194,12 +194,21 @@ async def get_recommended_papers(
     if online:
         try:
             papers = await rec_service.get_recommendations_for_user(user_id, limit=limit)
+            # 抓取成功后推送入库：写入 user_papers（带 pushed_at），
+            # 这样 is_new 徽章能显示，且下次不会重复推荐
+            if papers:
+                rec_service.push_papers_to_user(user_id, papers)
         except Exception as e:
             logger.error(f"Recommendation error: {e}")
 
     # 如果在线搜索没有结果，从已推送的论文中返回
     if not papers:
         papers = paper_service.get_papers_by_user(user_id, limit=limit)
+    else:
+        # 重新读取入库后的论文（带 pushed_at/is_bookmarked 等元数据）
+        fresh = paper_service.get_papers_by_user(user_id, limit=limit)
+        if fresh:
+            papers = fresh
 
     # 标记新论文
     now = datetime.now(timezone.utc)
