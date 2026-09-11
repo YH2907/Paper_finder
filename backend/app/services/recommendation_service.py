@@ -141,20 +141,30 @@ class RecommendationService:
             )
             await engine.close()
 
-            all_papers = []
-            seen_titles = set()
+            # 各来源分别去重后轮替交错（round-robin），保证结果多元性：
+            # 若直接串接，arXiv 的 60 篇会占满 [:limit]，Crossref/OpenAlex 永远被切掉
+            source_lists = []
             for result in results:
                 if isinstance(result, list):
-                    for p in result:
-                        # 跨源标题去重
+                    source_lists.append(result)
+                elif isinstance(result, Exception):
+                    logger.warning(f"Source error: {result}")
+
+            all_papers = []
+            seen_titles = set()
+            idx = 0
+            while any(idx < len(lst) for lst in source_lists):
+                for lst in source_lists:
+                    if idx < len(lst):
+                        p = lst[idx]
                         t = (p.get('title') or '').strip().lower()
+                        # 跨源标题去重
                         if t and t in seen_titles:
                             continue
                         if t:
                             seen_titles.add(t)
                         all_papers.append(p)
-                elif isinstance(result, Exception):
-                    logger.warning(f"Source error: {result}")
+                idx += 1
 
             logger.info(f"Total papers fetched: {len(all_papers)}")
             return all_papers
