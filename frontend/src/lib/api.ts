@@ -170,9 +170,20 @@ async function request<T>(
     return undefined as T;
   }
 
-  const data = await response.json();
+  // 容错：后端异常时可能返回纯文本（如 Internal Server Error）
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    // token 过期/无效：清除登录状态并跳转登录页，避免用户卡死在报错页面
+    if (response.status === 401 && !endpoint.startsWith("/auth/")) {
+      removeToken();
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/login")
+      ) {
+        window.location.href = "/login";
+      }
+    }
     throw new ApiError(response.status, data.detail || "请求失败");
   }
 

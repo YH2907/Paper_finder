@@ -134,7 +134,7 @@ class RecommendationService:
                 engine.search(query=space_query, limit=limit, sources=["openalex"], sort_by="newest"),
                 # arXiv 再按相关性抓一批，增加去重后的新论文数量
                 engine.search(query=arxiv_query, limit=limit, sources=["arxiv"], sort_by="relevance"),
-                engine.search(query=space_query, limit=limit, sources=["semantic_scholar"], sort_by="newest"),
+                # Semantic Scholar 免费层常年 429，不再调用（arXiv+OpenAlex 已足够）
                 return_exceptions=True,
             )
             await engine.close()
@@ -161,55 +161,106 @@ class RecommendationService:
             return []
 
     def push_papers_to_user(self, user_id, papers: list[dict]) -> int:
-        """推送论文给用户（存入 Supabase）"""
+        """推送论文给用户（存入 Supabase，批量查询去重）"""
         count = 0
+        if not papers:
+            return count
+
+        # 批量预查询已存在的论文（按 title/url/doi 分批 in 查询，避免每篇 3 次请求）
+        titles = [str(p.get('title', '')) for p in papers if p.get('title')]
+        urls = [str(p.get('url', '')) for p in papers if p.get('url')]
+        dois = [str(p.get('doi', '')).strip() for p in papers if str(p.get('doi', '')).strip()]
+
+        existing_by_title = {}
+        existing_by_url = {}
+        existing_by_doi = {}
+
+        def _batch_select(field: str, values: list[str]) -> list[dict]:
+            out = []
+            BATCH = 30
+            for i in range(0, len(values), BATCH):
+                batch = values[i:i + BATCH]
+                # PostgREST in 过滤：值含逗号/引号必须用双引号包裹并转义
+                encoded = ",".join(
+                    '"' + v.replace('\\', '\\\\').replace('"', '\\"') + '"'
+                    for v in batch
+                )
+                try:
+                    rows = self.db.client.select(
+                        'papers', **{field: ('in', f"({encoded})")},
+                    )
+                    out.extend(rows)
+                except Exception as e:
+                    logger.warning(f"Batch select papers by {field} failed: {e}")
+            return out
+
+        for row in _batch_select('title', titles):
+            existing_by_title[row['title']] = row['id']
+        for row in _batch_select('url', urls):
+            existing_by_url[row['url']] = row['id']
+        for row in _batch_select('doi', dois):
+            existing_by_doi[row['doi']] = row['id']
+
+        # 批量预查询已有关联
+        paper_uuids = set(existing_by_title.values()) | set(existing_by_url.values()) | set(existing_by_doi.values())
+        existing_links = set()
+        if paper_uuids:
+            uuid_list = list(paper_uuids)
+            BATCH = 50
+            for i in range(0, len(uuid_list), BATCH):
+                batch = uuid_list[i:i + BATCH]
+                try:
+                    links = self.db.client.select(
+                        'user_papers', user_id=str(user_id),
+                        paper_id=('in', f"({','.join(batch)})"),
+                    )
+                    existing_links.update(l['paper_id'] for l in links)
+                except Exception as e:
+                    logger.warning(f"Batch select user_papers failed: {e}")
+
         for paper in papers:
             doi = str(paper.get('doi', '')).strip()
-            existing = self.db.client.select('papers', doi=doi) if doi else []
-            if not existing and paper.get('url'):
-                existing = self.db.client.select('papers', url=paper['url'])
-            if not existing and paper.get('title'):
-                existing = self.db.client.select('papers', title=paper['title'])
+            title = str(paper.get('title', ''))
+            url = str(paper.get('url', ''))
 
-            if existing:
-                paper_uuid = existing[0]['id']
-            else:
+            paper_uuid = (
+                (existing_by_doi.get(doi) if doi else None)
+                or (existing_by_url.get(url) if url else None)
+                or existing_by_title.get(title)
+            )
+
+            if not paper_uuid:
                 paper_uuid = str(uuid.uuid4())
-                # 插入论文到 papers 表
                 authors = paper.get('authors', [])
-                if isinstance(authors, list):
-                    authors_json = authors
-                else:
-                    authors_json = [str(authors)]
-
-                # DOI 为空时不传，避免 unique constraint 冲突
+                authors_json = authors if isinstance(authors, list) else [str(authors)]
                 paper_data = {
                     'id': paper_uuid,
-                    'title': str(paper.get('title', ''))[:1024],
+                    'title': title[:1024],
                     'authors': authors_json,
                     'abstract': str(paper.get('abstract', '')) or '',
                     'source': str(paper.get('source', 'arxiv')),
-                    'url': str(paper.get('url', ''))[:2048],
+                    'url': url[:2048],
                     'published_at': paper.get('published_at') or paper.get('published') or None,
                 }
                 if doi:
                     paper_data['doi'] = doi
                 try:
                     self.db.client.insert('papers', paper_data)
+                    if title:
+                        existing_by_title[title] = paper_uuid
+                    if url:
+                        existing_by_url[url] = paper_uuid
+                    if doi:
+                        existing_by_doi[doi] = paper_uuid
                 except Exception as e:
                     logger.error(f"Insert paper error: {e}")
                     continue
 
-            association = self.db.client.select(
-                'user_papers', user_id=str(user_id), paper_id=str(paper_uuid)
-            )
-            if association:
+            if paper_uuid in existing_links:
                 continue
 
-            # 创建 user_papers 关联
-            up_id = str(uuid.uuid4())
             data = {
-                'id': up_id,
+                'id': str(uuid.uuid4()),
                 'user_id': str(user_id),
                 'paper_id': paper_uuid,
                 'is_bookmarked': False,
@@ -219,6 +270,7 @@ class RecommendationService:
             }
             try:
                 self.db.client.insert('user_papers', data)
+                existing_links.add(paper_uuid)
                 count += 1
             except Exception as e:
                 logger.warning(f"Insert user_paper skipped: {e}")

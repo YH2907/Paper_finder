@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "dev-jwt-secret-key"
     ALGORITHM: str = "HS256"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 天，避免频繁掉线
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # CORS 配置
